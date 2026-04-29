@@ -49,14 +49,17 @@ function teamProgress(code) {
 }
 
 function globalProgress() {
-  let owned = 0, total = 0;
+  let owned = 0, total = 0, doubles = 0;
   const codes = [...TEAMS.map(t => t.code), 'FWC'];
+
   for (const code of codes) {
     const p = teamProgress(code);
     owned += p.owned;
     total += p.total;
+    doubles += p.doubles;
   }
-  return { owned, total };
+
+  return { owned, total, doubles };
 }
 
 function pct(owned, total) {
@@ -141,11 +144,15 @@ function updateNavItem(code) {
 }
 
 function updateGlobalProgress() {
-  const { owned, total } = globalProgress();
+  const { owned, total, doubles } = globalProgress();
   const p = pct(owned, total);
+
   document.getElementById('global-pct').textContent = `${p}%`;
   document.getElementById('global-bar').style.width = `${p}%`;
-  document.getElementById('global-counts').textContent = `${owned} / ${total} stickers`;
+
+  document.getElementById('global-counts').textContent =
+    `${owned} / ${total} stickers · ${doubles} doublon${doubles > 1 ? 's' : ''}`;
+
   document.getElementById('mobile-progress-text').textContent = `${p}%`;
 }
 
@@ -436,3 +443,227 @@ async function init() {
 }
 
 init();
+
+// ── Modal ──────────────────────────────────────────────────────────────────
+let activeTab = 'import';
+
+function openModal() {
+  document.getElementById('modal-backdrop').classList.add('open');
+  switchTab('import');
+  document.getElementById('import-input').focus();
+}
+
+function closeModal() {
+  document.getElementById('modal-backdrop').classList.remove('open');
+  document.getElementById('import-result').innerHTML = '';
+  document.getElementById('trade-result').innerHTML = '';
+  document.getElementById('import-input').value = '';
+  document.getElementById('trade-received').value = '';
+  document.getElementById('trade-given').value = '';
+
+  pendingTradeKey = null;
+  document.getElementById('btn-trade').textContent = "Confirmer l'échange";
+}
+
+function handleBackdropClick(e) {
+  if (e.target === document.getElementById('modal-backdrop')) closeModal();
+}
+
+function switchTab(tab) {
+  activeTab = tab;
+  document.querySelectorAll('.modal-tab').forEach((el, i) => {
+    el.classList.toggle('active', (i === 0 && tab === 'import') || (i === 1 && tab === 'trade'));
+  });
+  document.getElementById('tab-import').classList.toggle('active', tab === 'import');
+  document.getElementById('tab-trade').classList.toggle('active',  tab === 'trade');
+  document.getElementById('btn-import').style.display = tab === 'import' ? '' : 'none';
+  document.getElementById('btn-trade').style.display  = tab === 'trade'  ? '' : 'none';
+  document.getElementById('import-result').innerHTML = '';
+  document.getElementById('trade-result').innerHTML  = '';
+}
+
+// Parse raw text into array of card codes
+// Accepte les listes separees par espaces, retours ligne, virgules, etc.
+// Ignore aussi les entetes d'export et les compteurs du type "x1".
+function parseInput(text) {
+  const teamCodes = [...TEAMS.map(t => t.code), 'FWC', 'FCW']
+    .sort((a, b) => b.length - a.length)
+    .join('|');
+
+  const cleaned = text
+    .replace(/\([^)]*\)/g, ' ')        // ignore les anciennes notes entre parentheses
+    .replace(/\bx\s*\d+\b/gi, ' '); // ignore les compteurs: x1, x2...
+
+  const re = new RegExp(`\\b(?:00|(?:${teamCodes})\\s*0*\\d{1,2})\\b`, 'gi');
+
+  return [...cleaned.matchAll(re)]
+    .map(m => m[0].toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC'))
+    .filter(Boolean);
+}
+
+// Render result box
+function renderResult(containerId, rows) {
+  const box = document.getElementById(containerId);
+  if (!rows.length) { box.innerHTML = ''; return; }
+  box.innerHTML = `<div class="result-box">${
+    rows.map(r => `<div class="result-row">
+      <span class="result-key">${r.label}</span>
+      <span class="result-val ${r.cls}">${r.value || '—'}</span>
+    </div>`).join('')
+  }</div>`;
+}
+
+async function doImport() {
+  const cards = parseInput(document.getElementById('import-input').value);
+  if (!cards.length) { showToast('⚠️ Aucune carte saisie'); return; }
+
+  const btn = document.getElementById('btn-import');
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const res = await api('/api/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ cards }),
+    });
+
+    // Refresh local collection
+    collection = await api('/api/collection');
+    renderNav();
+    renderOverview();
+    updateGlobalProgress();
+    if (currentTeam) renderTeamPage(currentTeam);
+
+    renderResult('import-result', [
+      { label: '✅ Importées',   value: res.ok.length      ? res.ok.join(', ')      : null, cls: 'ok'   },
+      { label: '❓ Inconnues',   value: res.unknown.length  ? res.unknown.join(', ') : null, cls: 'warn' },
+    ]);
+
+    showToast(`✅ ${res.ok.length} carte(s) importée(s)`);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Importer';
+  }
+}
+
+let pendingTradeKey = null;
+
+async function doTrade() {
+  const received = parseInput(document.getElementById('trade-received').value);
+  const given    = parseInput(document.getElementById('trade-given').value);
+
+  if (!received.length && !given.length) {
+    showToast('⚠️ Aucune carte saisie');
+    return;
+  }
+
+  const btn = document.getElementById('btn-trade');
+
+  const payload = { received, given };
+  const tradeKey = JSON.stringify(payload);
+
+  // Premier clic : prévisualisation uniquement, aucun envoi serveur
+  if (pendingTradeKey !== tradeKey) {
+    pendingTradeKey = tradeKey;
+
+    renderResult('trade-result', [
+      {
+        label: '🟢 Cartes à recevoir',
+        value: received.length ? received.join(', ') : '—',
+        cls: 'ok'
+      },
+      {
+        label: '🔴 Cartes à donner',
+        value: given.length ? given.join(', ') : '—',
+        cls: 'error'
+      },
+      {
+        label: '⚠️ Confirmation',
+        value: 'Cliquez encore une fois sur le bouton pour appliquer réellement l’échange.',
+        cls: 'warn'
+      }
+    ]);
+
+    btn.textContent = "Valider définitivement l'échange";
+    showToast('👀 Vérifiez la liste, puis cliquez encore une fois pour valider');
+    return;
+  }
+
+  // Deuxième clic : là seulement on envoie vraiment
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const res = await api('/api/trade', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+
+    pendingTradeKey = null;
+
+    collection = await api('/api/collection');
+    renderNav();
+    renderOverview();
+    updateGlobalProgress();
+    if (currentTeam) renderTeamPage(currentTeam);
+
+    const rows = [];
+
+    if (res.received.ok.length) {
+      rows.push({
+        label: '✅ Reçues OK',
+        value: res.received.ok.join(', '),
+        cls: 'ok'
+      });
+    }
+
+    if (res.received.unknown.length) {
+      rows.push({
+        label: '❓ Reçues inconnues',
+        value: res.received.unknown.join(', '),
+        cls: 'warn'
+      });
+    }
+
+    if (res.given.ok.length) {
+      rows.push({
+        label: '🔴 Données OK',
+        value: res.given.ok.join(', '),
+        cls: 'ok'
+      });
+    }
+
+    if (res.given.refused.length) {
+      rows.push({
+        label: '⛔ Non possédées',
+        value: res.given.refused.join(', '),
+        cls: 'error'
+      });
+    }
+
+    if (res.given.unknown.length) {
+      rows.push({
+        label: '❓ Données inconnues',
+        value: res.given.unknown.join(', '),
+        cls: 'warn'
+      });
+    }
+
+    renderResult('trade-result', rows);
+
+    const r = res.received.ok.length;
+    const g = res.given.ok.length;
+
+    showToast(`🔄 Échange appliqué : +${r} reçue(s) / −${g} donnée(s)`);
+    closeModal();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Confirmer l'échange";
+  }
+}
+// Keyboard shortcut: Escape closes modal
+document.addEventListener('keydown', e => {
+  if (e.key === 'Escape') closeModal();
+});

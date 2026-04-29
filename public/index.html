@@ -61,6 +61,57 @@
     </div>
   </main>
 
+  <!-- ── FAB ── -->
+  <button id="fab" title="Importer / Echanger" onclick="openModal()">+</button>
+
+  <!-- ── MODAL Import / Trade ── -->
+  <div class="modal-backdrop" id="modal-backdrop" onclick="handleBackdropClick(event)">
+    <div class="modal">
+      <div class="modal-header">
+        <span class="modal-title">Importer &amp; Echanger</span>
+        <button class="modal-close" onclick="closeModal()">&times;</button>
+      </div>
+      <div class="modal-tabs">
+        <button class="modal-tab active" onclick="switchTab('import')">Import</button>
+        <button class="modal-tab" onclick="switchTab('trade')">Echange</button>
+      </div>
+      <div class="modal-body">
+        <div class="tab-panel active" id="tab-import">
+          <p class="modal-desc">
+            Entrez les codes des cartes recues, une par ligne ou separees par des virgules.<br>
+            Format : <code>MEX5</code> <code>FRA10</code> <code>BEL20</code> <code>FWC3</code> <code>00</code><br>
+            Ou collez directement un fichier texte exporte depuis l'app.
+          </p>
+          <div class="textarea-label"><span class="label-received">Cartes recues</span></div>
+          <textarea class="card-input" id="import-input" rows="8" placeholder="MEX5&#10;FRA10, BEL3&#10;FWC7&#10;..."></textarea>
+          <div id="import-result"></div>
+        </div>
+        <div class="tab-panel" id="tab-trade">
+          <p class="modal-desc">
+            Saisissez les cartes <strong style="color:#56d364">recues</strong> et les cartes <strong style="color:#f85149">donnees</strong> lors d'un echange.
+            L'echange n'a pas besoin d'etre equitable. Format : <code>MEX5</code> <code>FWC3</code>
+          </p>
+          <div class="trade-cols">
+            <div>
+              <div class="textarea-label label-received">Recues</div>
+              <textarea class="card-input" id="trade-received" placeholder="MEX5&#10;FRA10&#10;BEL3&#10;..."></textarea>
+            </div>
+            <div>
+              <div class="textarea-label label-given">Donnees</div>
+              <textarea class="card-input" id="trade-given" placeholder="GER7&#10;ARG2&#10;..."></textarea>
+            </div>
+          </div>
+          <div id="trade-result"></div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button class="modal-btn btn-cancel" onclick="closeModal()">Annuler</button>
+        <button class="modal-btn btn-confirm-import" id="btn-import" onclick="doImport()">Importer</button>
+        <button class="modal-btn btn-confirm-trade" id="btn-trade" style="display:none" onclick="doTrade()">Confirmer l'echange</button>
+      </div>
+    </div>
+  </div>
+
   <!-- ── TOAST ── -->
   <div id="toast"></div>
 

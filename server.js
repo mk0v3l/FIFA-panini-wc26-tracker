@@ -3,7 +3,7 @@ const fs = require('fs');
 const path = require('path');
 
 const app = express();
-const PORT = process.env.PORT || 5001;
+const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
 
@@ -170,4 +170,102 @@ loadData();
 app.listen(PORT, () => {
   console.log(`\n🎴  Panini FIFA WC Tracker`);
   console.log(`🌐  http://localhost:${PORT}\n`);
+});
+
+// ─── Card code parser ────────────────────────────────────────────────────────
+function normalizeCardCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, '')
+    .replace(/^FCW/, 'FWC'); // tolere le typo frequent FCW -> FWC
+}
+
+function parseCardCode(raw) {
+  const s = normalizeCardCode(raw);
+  if (!s) return null;
+  if (s === '00') return { team: 'FWC', card: '00' };
+  if (s.startsWith('FWC')) {
+    if (s === 'FWC00') return { team: 'FWC', card: '00' };
+    const m = s.match(/^FWC0*(\d+)$/);
+    if (m) {
+      const n = parseInt(m[1], 10);
+      if (n >= 1 && n <= 19) return { team: 'FWC', card: String(n) };
+    }
+    return null;
+  }
+  const teamCodes = TEAMS.map(t => t.code).sort((a, b) => b.length - a.length);
+  for (const code of teamCodes) {
+    if (s.startsWith(code)) {
+      const n = parseInt(s.slice(code.length), 10);
+      if (!isNaN(n) && n >= 1 && n <= 20) return { team: code, card: String(n) };
+    }
+  }
+  return null;
+}
+
+function extractCardCodes(input) {
+  const values = Array.isArray(input) ? input : [input];
+  const teamCodes = [...TEAMS.map(t => t.code), 'FWC', 'FCW']
+    .sort((a, b) => b.length - a.length)
+    .join('|');
+  const re = new RegExp(`\\b(?:00|(?:${teamCodes})\\s*0*\\d{1,2})\\b`, 'gi');
+
+  return values.flatMap(value => {
+    const text = String(value || '')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\bx\s*\d+\b/gi, ' ');
+    return [...text.matchAll(re)].map(m => normalizeCardCode(m[0]));
+  });
+}
+
+// ─── Import ──────────────────────────────────────────────────────────────────
+app.post('/api/import', (req, res) => {
+  const { cards } = req.body;
+  if (!Array.isArray(cards) && typeof cards !== 'string') {
+    return res.status(400).json({ error: 'cards must be an array or a string' });
+  }
+  const inputCards = extractCardCodes(cards);
+  const data = loadData();
+  const results = { ok: [], unknown: [] };
+  for (const raw of inputCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.unknown.push(raw); continue;
+    }
+    data[parsed.team][parsed.card]++;
+    results.ok.push(raw);
+  }
+  saveData(data);
+  res.json(results);
+});
+
+// ─── Trade ───────────────────────────────────────────────────────────────────
+app.post('/api/trade', (req, res) => {
+  const { received = [], given = [] } = req.body;
+  const receivedCards = extractCardCodes(received);
+  const givenCards = extractCardCodes(given);
+  const data = loadData();
+  const results = { received: { ok: [], unknown: [] }, given: { ok: [], unknown: [], refused: [] } };
+  for (const raw of receivedCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.received.unknown.push(raw); continue;
+    }
+    data[parsed.team][parsed.card]++;
+    results.received.ok.push(raw);
+  }
+  for (const raw of givenCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.given.unknown.push(raw); continue;
+    }
+    if (data[parsed.team][parsed.card] <= 0) {
+      results.given.refused.push(raw); continue;
+    }
+    data[parsed.team][parsed.card]--;
+    results.given.ok.push(raw);
+  }
+  saveData(data);
+  res.json(results);
 });

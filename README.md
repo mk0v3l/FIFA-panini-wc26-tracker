@@ -19,8 +19,8 @@ Ouvrir dans le navigateur : **http://localhost:3000**
 ## Fonctionnalités
 
 - **48 équipes** réparties en groupes A–L
-- **Cartes spéciales FWC** (00–19)
-- Chaque équipe : cartes `1–20` (20 cartes)
+- **Cartes spéciales FWC** (1–19)
+- Chaque équipe : cartes `00` + `1–20` (21 cartes)
 - **Clic / Tap** → ajouter un exemplaire
 - **Clic long / Clic droit** → retirer un exemplaire
 - Badge `x1`, `x2`... affiché sur les cartes en double
