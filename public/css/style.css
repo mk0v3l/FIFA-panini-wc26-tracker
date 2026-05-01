@@ -332,6 +332,17 @@ a { text-decoration: none; color: inherit; }
 .team-btn:hover { opacity: 0.75; }
 .reset-btn { border-color: var(--danger); color: var(--danger); }
 
+.nav-team-btn {
+  border-color: var(--border);
+  color: var(--text);
+  background: var(--surface2);
+}
+
+.nav-team-btn:hover {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
 /* ── Card grid ───────────────────────────────────────────── */
 .cards-grid {
   display: grid;

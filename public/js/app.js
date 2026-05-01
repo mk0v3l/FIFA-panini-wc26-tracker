@@ -213,7 +213,31 @@ function updateOverviewCard(code) {
     if (spans[1]) spans[1].textContent = `${progress}%`;
   }
 }
+// ── Navigation pays précédent / suivant ───────────────────────────────────
+function getTeamOrder() {
+  // Même ordre que dans la navigation : tous les pays, puis FWC Special à la fin
+  return [...TEAMS.map(t => t.code), 'FWC'];
+}
 
+function getAdjacentTeamCode(code, delta) {
+  const order = getTeamOrder();
+  const index = order.indexOf(code);
+
+  if (index === -1) return null;
+
+  // Navigation circulaire :
+  // avant le premier = dernier, après le dernier = premier
+  return order[(index + delta + order.length) % order.length];
+}
+
+function navigateAdjacentTeam(delta) {
+  if (!currentTeam) return;
+
+  const nextCode = getAdjacentTeamCode(currentTeam, delta);
+  if (!nextCode) return;
+
+  navigateTo(nextCode);
+}
 // ── Team / FWC page ────────────────────────────────────────────────────────
 function renderTeamPage(code) {
   const isSpecial = code === 'FWC';
@@ -229,6 +253,11 @@ function renderTeamPage(code) {
   const progress = pct(p.owned, p.total);
   const color = team.color || '#238636';
   const flag = FLAG_MAP[code] || '🏳';
+  const prevCode = getAdjacentTeamCode(code, -1);
+  const nextCode = getAdjacentTeamCode(code, +1);
+
+  const prevFlag = FLAG_MAP[prevCode] || '◀';
+  const nextFlag = FLAG_MAP[nextCode] || '▶';
 
   // Ordre des cartes : équipes = 1-20 ; FWC special = 00 puis FWC1-FWC19
   const cardKeys = isSpecial
@@ -255,8 +284,16 @@ function renderTeamPage(code) {
         </div>
       </div>
       <div class="team-actions">
-        <button class="team-btn reset-btn" onclick="confirmReset('${code}')">🗑 Reset</button>
-      </div>
+  <button class="team-btn nav-team-btn" onclick="navigateAdjacentTeam(-1)" title="Pays précédent">
+    ← ${prevFlag} ${prevCode}
+  </button>
+
+  <button class="team-btn nav-team-btn" onclick="navigateAdjacentTeam(1)" title="Pays suivant">
+    ${nextCode} ${nextFlag} →
+  </button>
+
+  <button class="team-btn reset-btn" onclick="confirmReset('${code}')">🗑 Reset</button>
+</div>
     </div>
 
     <div class="cards-grid" id="cards-grid-${code}"></div>`;
