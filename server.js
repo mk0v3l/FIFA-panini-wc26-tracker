@@ -242,11 +242,14 @@ app.post('/api/import', (req, res) => {
 
 // ─── Trade ───────────────────────────────────────────────────────────────────
 app.post('/api/trade', (req, res) => {
-  const { received = [], given = [] } = req.body;
+  const { received = [], given = [], allowUniqueGiven = false } = req.body;
   const receivedCards = extractCardCodes(received);
   const givenCards = extractCardCodes(given);
   const data = loadData();
-  const results = { received: { ok: [], unknown: [] }, given: { ok: [], unknown: [], refused: [] } };
+  const results = {
+    received: { ok: [], unknown: [] },
+    given: { ok: [], unknown: [], refused: [], uniqueBlocked: [] }
+  };
   for (const raw of receivedCards) {
     const parsed = parseCardCode(raw);
     if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
@@ -260,8 +263,12 @@ app.post('/api/trade', (req, res) => {
     if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
       results.given.unknown.push(raw); continue;
     }
-    if (data[parsed.team][parsed.card] <= 0) {
+    const count = data[parsed.team][parsed.card] || 0;
+    if (count <= 0) {
       results.given.refused.push(raw); continue;
+    }
+    if (!allowUniqueGiven && count <= 1) {
+      results.given.uniqueBlocked.push(raw); continue;
     }
     data[parsed.team][parsed.card]--;
     results.given.ok.push(raw);

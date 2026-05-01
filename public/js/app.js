@@ -797,6 +797,7 @@ function closeModal() {
   document.getElementById('import-input').value = '';
   document.getElementById('trade-received').value = '';
   document.getElementById('trade-given').value = '';
+  document.getElementById('trade-allow-unique').checked = false;
 
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
@@ -836,6 +837,46 @@ function parseInput(text) {
   return [...cleaned.matchAll(re)]
     .map(m => m[0].toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC'))
     .filter(Boolean);
+}
+
+function parseCardCodeClient(raw) {
+  const s = String(raw || '').trim().toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC');
+  if (!s) return null;
+  if (s === '00' || s === 'FWC00') return { team: 'FWC', card: '00' };
+  if (s.startsWith('FWC')) {
+    const n = parseInt(s.slice(3), 10);
+    if (!isNaN(n) && n >= 1 && n <= 19) return { team: 'FWC', card: String(n) };
+    return null;
+  }
+
+  const teamCodes = TEAMS.map(t => t.code).sort((a, b) => b.length - a.length);
+  for (const code of teamCodes) {
+    if (s.startsWith(code)) {
+      const n = parseInt(s.slice(code.length), 10);
+      if (!isNaN(n) && n >= 1 && n <= 20) return { team: code, card: String(n) };
+    }
+  }
+  return null;
+}
+
+function getUniqueBlockedPreview(given) {
+  const simulated = JSON.parse(JSON.stringify(collection));
+  const blocked = [];
+
+  for (const raw of given) {
+    const parsed = parseCardCodeClient(raw);
+    if (!parsed || !simulated[parsed.team] || !(parsed.card in simulated[parsed.team])) continue;
+
+    const count = simulated[parsed.team][parsed.card] || 0;
+    if (count <= 0) continue;
+    if (count <= 1) {
+      blocked.push(raw);
+      continue;
+    }
+    simulated[parsed.team][parsed.card]--;
+  }
+
+  return blocked;
 }
 
 // Render result box
@@ -889,6 +930,7 @@ let pendingTradeKey = null;
 async function doTrade() {
   const received = parseInput(document.getElementById('trade-received').value);
   const given    = parseInput(document.getElementById('trade-given').value);
+  const allowUniqueGiven = document.getElementById('trade-allow-unique').checked;
 
   if (!received.length && !given.length) {
     showToast('⚠️ Aucune carte saisie');
@@ -897,14 +939,13 @@ async function doTrade() {
 
   const btn = document.getElementById('btn-trade');
 
-  const payload = { received, given };
+  const payload = { received, given, allowUniqueGiven };
   const tradeKey = JSON.stringify(payload);
 
   // Premier clic : prévisualisation uniquement, aucun envoi serveur
   if (pendingTradeKey !== tradeKey) {
     pendingTradeKey = tradeKey;
-
-    renderResult('trade-result', [
+    const previewRows = [
       {
         label: '🟢 Cartes à recevoir',
         value: received.length ? received.join(', ') : '—',
@@ -914,13 +955,25 @@ async function doTrade() {
         label: '🔴 Cartes à donner',
         value: given.length ? given.join(', ') : '—',
         cls: 'error'
-      },
-      {
-        label: '⚠️ Confirmation',
-        value: 'Cliquez encore une fois sur le bouton pour appliquer réellement l’échange.',
-        cls: 'warn'
       }
-    ]);
+    ];
+
+    const uniqueBlocked = allowUniqueGiven ? [] : getUniqueBlockedPreview(given);
+    if (uniqueBlocked.length) {
+      previewRows.push({
+        label: '⚠️ Uniques protégées',
+        value: uniqueBlocked.join(', '),
+        cls: 'warn'
+      });
+    }
+
+    previewRows.push({
+      label: '⚠️ Confirmation',
+      value: 'Cliquez encore une fois sur le bouton pour appliquer réellement l’échange.',
+      cls: 'warn'
+    });
+
+    renderResult('trade-result', previewRows);
 
     btn.textContent = "Valider définitivement l'échange";
     showToast('👀 Vérifiez la liste, puis cliquez encore une fois pour valider');
@@ -977,6 +1030,14 @@ async function doTrade() {
         label: '⛔ Non possédées',
         value: res.given.refused.join(', '),
         cls: 'error'
+      });
+    }
+
+    if (res.given.uniqueBlocked && res.given.uniqueBlocked.length) {
+      rows.push({
+        label: '⚠️ Uniques protégées',
+        value: res.given.uniqueBlocked.join(', '),
+        cls: 'warn'
       });
     }
 
