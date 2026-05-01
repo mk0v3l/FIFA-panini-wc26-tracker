@@ -3,6 +3,81 @@ let TEAMS = [];
 let collection = {};
 let currentTeam = null;
 
+
+const FRENCH_TEAM_NAMES = {
+  MEX: ['mexique'],
+  RSA: ['afrique du sud'],
+  KOR: ['coree du sud', 'corée du sud'],
+  CZE: ['tchequie', 'tchéquie', 'republique tcheque', 'république tchèque'],
+  CAN: ['canada'],
+  BIH: ['bosnie', 'bosnie herzégovine', 'bosnie-herzegovine', 'bosnie-herzégovine'],
+  QAT: ['qatar'],
+  SUI: ['suisse'],
+  BRA: ['bresil', 'brésil'],
+  MAR: ['maroc'],
+  HAI: ['haiti', 'haïti'],
+  SCO: ['ecosse', 'écosse'],
+  USA: ['etats unis', 'états unis', 'usa', 'etats-unis', 'états-unis'],
+  PAR: ['paraguay'],
+  AUS: ['australie'],
+  TUR: ['turquie'],
+  GER: ['allemagne'],
+  CUW: ['curacao', 'curaçao'],
+  CIV: ['cote divoire', "côte d'ivoire", 'cote d ivoire'],
+  ECU: ['equateur', 'équateur'],
+  NED: ['pays bas', 'pays-bas', 'hollande'],
+  JPN: ['japon'],
+  SWE: ['suede', 'suède'],
+  TUN: ['tunisie'],
+  BEL: ['belgique'],
+  EGY: ['egypte', 'égypte'],
+  IRN: ['iran'],
+  NZL: ['nouvelle zelande', 'nouvelle-zélande', 'nouvelle zélande'],
+  ESP: ['espagne'],
+  CPV: ['cap vert', 'cap-vert'],
+  KSA: ['arabie saoudite'],
+  URU: ['uruguay'],
+  FRA: ['france'],
+  SEN: ['senegal', 'sénégal'],
+  IRQ: ['irak'],
+  NOR: ['norvege', 'norvège'],
+  ARG: ['argentine'],
+  ALG: ['algerie', 'algérie'],
+  AUT: ['autriche'],
+  JOR: ['jordanie'],
+  POR: ['portugal'],
+  COD: ['congo', 'rd congo', 'republique democratique du congo', 'république démocratique du congo'],
+  UZB: ['ouzbekistan'],
+  COL: ['colombie'],
+  ENG: ['angleterre'],
+  CRO: ['croatie'],
+  GHA: ['ghana'],
+  PAN: ['panama'],
+  FWC: ['special', 'spécial', 'fwc']
+};
+
+function normalizeSearchText(value) {
+  return String(value || '')
+    .toLowerCase()
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/['’.-]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function teamMatchesSearch(team, query) {
+  if (!query) return true;
+
+  const aliases = [
+    team.code,
+    team.name,
+    ...(FRENCH_TEAM_NAMES[team.code] || [])
+  ];
+
+  return aliases.some(alias => normalizeSearchText(alias).includes(query));
+}
+
 // Country flag emoji helper (ISO 3166-1 alpha-2)
 const FLAG_MAP = {
   MEX:'🇲🇽', RSA:'🇿🇦', KOR:'🇰🇷', CZE:'🇨🇿',
@@ -78,7 +153,10 @@ function renderNav() {
   const nav = document.getElementById('team-nav');
   nav.innerHTML = '';
 
-  // Overview item
+  const searchInput = document.getElementById('team-search');
+  const query = normalizeSearchText(searchInput ? searchInput.value : '');
+
+  // Vue d'ensemble toujours visible
   const ovItem = document.createElement('div');
   ovItem.className = 'nav-item' + (currentTeam === null ? ' active' : '');
   ovItem.innerHTML = `<span class="nav-item-flag">🏠</span>
@@ -88,26 +166,54 @@ function renderNav() {
   ovItem.onclick = () => navigateTo(null);
   nav.appendChild(ovItem);
 
-  // Teams by group
+  // Teams filtrées par groupe
   const groups = [...new Set(TEAMS.map(t => t.group))];
+
+  let visibleCount = 0;
+
   for (const group of groups) {
+    const teamsInGroup = TEAMS
+      .filter(t => t.group === group)
+      .filter(t => teamMatchesSearch(t, query));
+
+    if (!teamsInGroup.length) continue;
+
     const header = document.createElement('div');
     header.className = 'group-header';
     header.textContent = `Groupe ${group}`;
     nav.appendChild(header);
 
-    for (const team of TEAMS.filter(t => t.group === group)) {
+    for (const team of teamsInGroup) {
       nav.appendChild(makeNavItem(team));
+      visibleCount++;
     }
   }
 
   // FWC Special
-  const fwcHeader = document.createElement('div');
-  fwcHeader.className = 'group-header nav-item-special';
-  fwcHeader.style.paddingTop = '12px';
-  fwcHeader.textContent = 'Spécial';
-  nav.appendChild(fwcHeader);
-  nav.appendChild(makeNavItem({ code: 'FWC', name: 'FWC Special', group: 'FWC', color: '#1f6feb' }));
+  const fwcTeam = {
+    code: 'FWC',
+    name: 'FWC Special',
+    group: 'FWC',
+    color: '#1f6feb'
+  };
+
+  if (teamMatchesSearch(fwcTeam, query)) {
+    const fwcHeader = document.createElement('div');
+    fwcHeader.className = 'group-header nav-item-special';
+    fwcHeader.style.paddingTop = '12px';
+    fwcHeader.textContent = 'Spécial';
+    nav.appendChild(fwcHeader);
+    nav.appendChild(makeNavItem(fwcTeam));
+    visibleCount++;
+  }
+
+  // Message si aucun résultat
+  if (query && visibleCount === 0) {
+    const empty = document.createElement('div');
+    empty.className = 'nav-empty';
+    empty.textContent = 'Aucun pays trouvé';
+    nav.appendChild(empty);
+  }
 }
 
 function makeNavItem(team) {
