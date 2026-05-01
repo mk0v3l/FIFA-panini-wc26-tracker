@@ -6,6 +6,7 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = path.join(__dirname, 'data');
 const DATA_FILE = path.join(DATA_DIR, 'collection.json');
+const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
@@ -103,8 +104,35 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+function loadHistory() {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(HISTORY_FILE)) return [];
+
+  try {
+    const history = JSON.parse(fs.readFileSync(HISTORY_FILE, 'utf8'));
+    return Array.isArray(history) ? history : [];
+  } catch (err) {
+    console.warn('Invalid history.json ignored:', err.message);
+    return [];
+  }
+}
+
+function saveHistory(history) {
+  if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(HISTORY_FILE, JSON.stringify(history, null, 2));
+}
+
+function createHistoryId() {
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
+}
+
 function cloneData(data) {
   return JSON.parse(JSON.stringify(data));
+}
+
+function cardCode(team, card) {
+  if (team === 'FWC') return card === '00' ? '00' : `FWC${card}`;
+  return `${team}${card}`;
 }
 
 function collectionStats(data) {
@@ -136,11 +164,79 @@ function buildTradeImpact(before, after, counters) {
   };
 }
 
+function trackDelta(deltaMap, data, parsed) {
+  const key = `${parsed.team}:${parsed.card}`;
+  if (!deltaMap.has(key)) {
+    deltaMap.set(key, {
+      team: parsed.team,
+      card: parsed.card,
+      code: cardCode(parsed.team, parsed.card),
+      before: data[parsed.team][parsed.card] || 0,
+      after: data[parsed.team][parsed.card] || 0,
+      delta: 0
+    });
+  }
+  return deltaMap.get(key);
+}
+
+function finalizeDeltas(deltaMap, data) {
+  return [...deltaMap.values()].map(delta => {
+    const after = data[delta.team][delta.card] || 0;
+    return {
+      ...delta,
+      after,
+      delta: after - delta.before
+    };
+  });
+}
+
+function appendHistoryEntry(entry) {
+  const history = loadHistory();
+  history.push(entry);
+  saveHistory(history.slice(-200));
+}
+
+function buildHistoryEntry(type, payload) {
+  return {
+    id: createHistoryId(),
+    date: new Date().toISOString(),
+    type,
+    ...payload
+  };
+}
+
+function processImport(data, body) {
+  const { cards } = body || {};
+  if (!Array.isArray(cards) && typeof cards !== 'string') {
+    return { error: 'cards must be an array or a string' };
+  }
+
+  const inputCards = extractCardCodes(cards);
+  const deltaMap = new Map();
+  const results = { ok: [], unknown: [], deltas: [] };
+
+  for (const raw of inputCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.unknown.push(raw);
+      continue;
+    }
+
+    trackDelta(deltaMap, data, parsed);
+    data[parsed.team][parsed.card]++;
+    results.ok.push(raw);
+  }
+
+  results.deltas = finalizeDeltas(deltaMap, data);
+  return results;
+}
+
 function processTrade(data, body) {
   const { received = [], given = [], allowUniqueGiven = false } = body || {};
   const receivedCards = extractCardCodes(received);
   const givenCards = extractCardCodes(given);
   const before = collectionStats(data);
+  const deltaMap = new Map();
   const counters = {
     newReceived: 0,
     receivedAsDoubles: 0,
@@ -162,6 +258,7 @@ function processTrade(data, body) {
     const count = data[parsed.team][parsed.card] || 0;
     if (count <= 0) counters.newReceived++;
     else counters.receivedAsDoubles++;
+    trackDelta(deltaMap, data, parsed);
     data[parsed.team][parsed.card]++;
     results.received.ok.push(raw);
   }
@@ -189,11 +286,13 @@ function processTrade(data, body) {
       counters.duplicateGiven++;
       results.given.duplicateGiven.push(raw);
     }
+    trackDelta(deltaMap, data, parsed);
     data[parsed.team][parsed.card]--;
     results.given.ok.push(raw);
   }
 
   results.impact = buildTradeImpact(before, collectionStats(data), counters);
+  results.deltas = finalizeDeltas(deltaMap, data);
   return results;
 }
 
@@ -201,6 +300,31 @@ function processTrade(data, body) {
 app.get('/api/teams', (_req, res) => res.json(TEAMS));
 
 app.get('/api/collection', (_req, res) => res.json(loadData()));
+
+app.get('/api/history', (_req, res) => {
+  res.json(loadHistory().slice(-20).reverse());
+});
+
+app.post('/api/undo-last', (_req, res) => {
+  const history = loadHistory();
+  const entry = history.pop();
+  if (!entry) return res.status(404).json({ error: 'No history to undo' });
+  if (!Array.isArray(entry.deltas)) {
+    return res.status(400).json({ error: 'Last history entry cannot be undone' });
+  }
+
+  const data = loadData();
+  for (const delta of entry.deltas) {
+    if (!data[delta.team] || !(delta.card in data[delta.team])) {
+      return res.status(400).json({ error: 'History entry references an invalid card' });
+    }
+    data[delta.team][delta.card] = Math.max(0, Number(delta.before) || 0);
+  }
+
+  saveData(data);
+  saveHistory(history);
+  res.json({ ok: true, undone: entry });
+});
 
 app.patch('/api/card', (req, res) => {
   const { team, card, delta } = req.body;
@@ -315,21 +439,21 @@ function extractCardCodes(input) {
 
 // ─── Import ──────────────────────────────────────────────────────────────────
 app.post('/api/import', (req, res) => {
-  const { cards } = req.body;
-  if (!Array.isArray(cards) && typeof cards !== 'string') {
-    return res.status(400).json({ error: 'cards must be an array or a string' });
-  }
-  const inputCards = extractCardCodes(cards);
   const data = loadData();
-  const results = { ok: [], unknown: [] };
-  for (const raw of inputCards) {
-    const parsed = parseCardCode(raw);
-    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
-      results.unknown.push(raw); continue;
-    }
-    data[parsed.team][parsed.card]++;
-    results.ok.push(raw);
+  const results = processImport(data, req.body);
+  if (results.error) return res.status(400).json({ error: results.error });
+
+  if (results.ok.length) {
+    const entry = buildHistoryEntry('import', {
+      imported: results.ok,
+      received: [],
+      given: [],
+      deltas: results.deltas
+    });
+    appendHistoryEntry(entry);
+    results.historyId = entry.id;
   }
+
   saveData(data);
   res.json(results);
 });
@@ -338,6 +462,16 @@ app.post('/api/import', (req, res) => {
 app.post('/api/trade', (req, res) => {
   const data = loadData();
   const results = processTrade(data, req.body);
+  if (results.received.ok.length || results.given.ok.length) {
+    const entry = buildHistoryEntry('trade', {
+      imported: [],
+      received: results.received.ok,
+      given: results.given.ok,
+      deltas: results.deltas
+    });
+    appendHistoryEntry(entry);
+    results.historyId = entry.id;
+  }
   saveData(data);
   res.json(results);
 });

@@ -38,17 +38,25 @@
   </div>
     <nav id="team-nav"></nav>
 
-      <div class="export-section">
-  <div class="export-title">Copier</div>
+    <div class="export-section">
+      <div class="export-title">Copier</div>
 
-  <button type="button" class="export-btn missing-btn" onclick="copyExport('missing')">
-    📋 Cartes manquantes
-  </button>
+      <button type="button" class="export-btn missing-btn" onclick="copyExport('missing')">
+        📋 Cartes manquantes
+      </button>
 
-  <button type="button" class="export-btn doubles-btn" onclick="copyExport('doubles')">
-    🔄 Doublons
-  </button>
-</div>
+      <button type="button" class="export-btn doubles-btn" onclick="copyExport('doubles')">
+        🔄 Doublons
+      </button>
+    </div>
+
+    <div class="history-section">
+      <div class="history-header">
+        <span>Historique</span>
+        <button type="button" id="undo-last-btn" onclick="undoLastAction()">Annuler dernière action</button>
+      </div>
+      <div id="history-list" class="history-list"></div>
+    </div>
   </aside>
 
   <!-- ── MAIN ── -->

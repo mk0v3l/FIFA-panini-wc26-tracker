@@ -1,6 +1,7 @@
 // ── State ──────────────────────────────────────────────────────────────────
 let TEAMS = [];
 let collection = {};
+let historyEntries = [];
 let currentTeam = null;
 
 
@@ -111,6 +112,10 @@ async function patchCard(team, card, delta) {
 
 async function resetTeam(code) {
   return api(`/api/reset/${code}`, { method: 'POST' });
+}
+
+async function undoLast() {
+  return api('/api/undo-last', { method: 'POST' });
 }
 
 // ── Progress calculation ───────────────────────────────────────────────────
@@ -260,6 +265,61 @@ function updateGlobalProgress() {
     `${owned} / ${total} stickers · ${doubles} doublon${doubles > 1 ? 's' : ''}`;
 
   document.getElementById('mobile-progress-text').textContent = `${p}%`;
+}
+
+function refreshCollectionViews() {
+  renderNav();
+  renderOverview();
+  updateGlobalProgress();
+  if (currentTeam) renderTeamPage(currentTeam);
+}
+
+async function refreshHistory() {
+  historyEntries = await api('/api/history');
+  renderHistory();
+}
+
+function formatHistoryDate(value) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return '';
+  return date.toLocaleString('fr-FR', {
+    day: '2-digit',
+    month: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit'
+  });
+}
+
+function renderHistory() {
+  const list = document.getElementById('history-list');
+  const undoBtn = document.getElementById('undo-last-btn');
+  if (!list || !undoBtn) return;
+
+  undoBtn.disabled = historyEntries.length === 0;
+  if (!historyEntries.length) {
+    list.innerHTML = '<div class="history-empty">Aucune action récente</div>';
+    return;
+  }
+
+  list.innerHTML = historyEntries.slice(0, 5).map(entry => {
+    const count = Array.isArray(entry.deltas)
+      ? entry.deltas.reduce((sum, delta) => sum + Math.abs(delta.delta || 0), 0)
+      : 0;
+    const title = entry.type === 'trade' ? 'Echange' : 'Import';
+    const parts = [];
+    if (entry.imported && entry.imported.length) parts.push(`${entry.imported.length} importée(s)`);
+    if (entry.received && entry.received.length) parts.push(`${entry.received.length} reçue(s)`);
+    if (entry.given && entry.given.length) parts.push(`${entry.given.length} donnée(s)`);
+    if (!parts.length && count) parts.push(`${count} modification(s)`);
+
+    return `<div class="history-item">
+      <div class="history-item-title">
+        <span>${title}</span>
+        <span>${formatHistoryDate(entry.date)}</span>
+      </div>
+      <div class="history-item-meta">${parts.join(' · ') || 'Action enregistrée'}</div>
+    </div>`;
+  }).join('');
 }
 
 // ── Overview page ──────────────────────────────────────────────────────────
@@ -769,14 +829,16 @@ function showCopyFallback(text, label) {
 
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
-  [TEAMS, collection] = await Promise.all([
+  [TEAMS, collection, historyEntries] = await Promise.all([
     api('/api/teams'),
     api('/api/collection'),
+    api('/api/history'),
   ]);
 
   renderNav();
   renderOverview();
   updateGlobalProgress();
+  renderHistory();
 }
 
 init();
@@ -868,10 +930,8 @@ async function doImport() {
 
     // Refresh local collection
     collection = await api('/api/collection');
-    renderNav();
-    renderOverview();
-    updateGlobalProgress();
-    if (currentTeam) renderTeamPage(currentTeam);
+    refreshCollectionViews();
+    await refreshHistory();
 
     renderResult('import-result', [
       { label: '✅ Importées',   value: res.ok.length      ? res.ok.join(', ')      : null, cls: 'ok'   },
@@ -1003,10 +1063,8 @@ async function doTrade() {
     pendingTradeKey = null;
 
     collection = await api('/api/collection');
-    renderNav();
-    renderOverview();
-    updateGlobalProgress();
-    if (currentTeam) renderTeamPage(currentTeam);
+    refreshCollectionViews();
+    await refreshHistory();
 
     const rows = [];
 
@@ -1068,6 +1126,29 @@ async function doTrade() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Confirmer l'échange";
+  }
+}
+
+async function undoLastAction() {
+  const btn = document.getElementById('undo-last-btn');
+  btn.disabled = true;
+
+  try {
+    const res = await undoLast();
+    if (res.error) {
+      showToast('Aucune action à annuler');
+      return;
+    }
+
+    collection = await api('/api/collection');
+    refreshCollectionViews();
+    await refreshHistory();
+    showToast('Dernière action annulée');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Annulation impossible');
+  } finally {
+    btn.disabled = historyEntries.length === 0;
   }
 }
 // Keyboard shortcut: Escape closes modal
