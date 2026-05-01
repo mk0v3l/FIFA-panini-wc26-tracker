@@ -839,46 +839,6 @@ function parseInput(text) {
     .filter(Boolean);
 }
 
-function parseCardCodeClient(raw) {
-  const s = String(raw || '').trim().toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC');
-  if (!s) return null;
-  if (s === '00' || s === 'FWC00') return { team: 'FWC', card: '00' };
-  if (s.startsWith('FWC')) {
-    const n = parseInt(s.slice(3), 10);
-    if (!isNaN(n) && n >= 1 && n <= 19) return { team: 'FWC', card: String(n) };
-    return null;
-  }
-
-  const teamCodes = TEAMS.map(t => t.code).sort((a, b) => b.length - a.length);
-  for (const code of teamCodes) {
-    if (s.startsWith(code)) {
-      const n = parseInt(s.slice(code.length), 10);
-      if (!isNaN(n) && n >= 1 && n <= 20) return { team: code, card: String(n) };
-    }
-  }
-  return null;
-}
-
-function getUniqueBlockedPreview(given) {
-  const simulated = JSON.parse(JSON.stringify(collection));
-  const blocked = [];
-
-  for (const raw of given) {
-    const parsed = parseCardCodeClient(raw);
-    if (!parsed || !simulated[parsed.team] || !(parsed.card in simulated[parsed.team])) continue;
-
-    const count = simulated[parsed.team][parsed.card] || 0;
-    if (count <= 0) continue;
-    if (count <= 1) {
-      blocked.push(raw);
-      continue;
-    }
-    simulated[parsed.team][parsed.card]--;
-  }
-
-  return blocked;
-}
-
 // Render result box
 function renderResult(containerId, rows) {
   const box = document.getElementById(containerId);
@@ -927,6 +887,66 @@ async function doImport() {
 
 let pendingTradeKey = null;
 
+function formatCountDelta(before, after) {
+  if (before === after) return `${before}`;
+  return `${before} -> ${after}`;
+}
+
+function buildTradePreviewRows(preview) {
+  const impact = preview.impact;
+  const rows = [
+    { label: 'Nouvelles reçues', value: String(impact.newReceived), cls: 'ok' },
+    { label: 'Reçues déjà possédées', value: String(impact.receivedAsDoubles), cls: 'warn' },
+    { label: 'Doublons donnés', value: String(impact.duplicateGiven), cls: 'ok' }
+  ];
+
+  if (impact.uniqueGiven > 0) {
+    rows.push({ label: 'Cartes uniques données', value: String(impact.uniqueGiven), cls: 'error' });
+  }
+  if (impact.uniqueBlocked > 0) {
+    rows.push({ label: 'Cartes uniques bloquées', value: String(impact.uniqueBlocked), cls: 'warn' });
+  }
+
+  rows.push(
+    {
+      label: 'Progression',
+      value: `${impact.before.progress}% -> ${impact.after.progress}%`,
+      cls: impact.after.progress >= impact.before.progress ? 'ok' : 'warn'
+    },
+    {
+      label: 'Total possédé',
+      value: formatCountDelta(impact.before.owned, impact.after.owned),
+      cls: impact.after.owned >= impact.before.owned ? 'ok' : 'warn'
+    },
+    {
+      label: 'Total doublons',
+      value: formatCountDelta(impact.before.doubles, impact.after.doubles),
+      cls: impact.after.doubles <= impact.before.doubles ? 'ok' : 'warn'
+    }
+  );
+
+  if (preview.received.unknown.length) {
+    rows.push({ label: 'Reçues inconnues', value: preview.received.unknown.join(', '), cls: 'warn' });
+  }
+  if (preview.given.unknown.length) {
+    rows.push({ label: 'Données inconnues', value: preview.given.unknown.join(', '), cls: 'warn' });
+  }
+  if (preview.given.refused.length) {
+    rows.push({ label: 'Non possédées', value: preview.given.refused.join(', '), cls: 'error' });
+  }
+  if (preview.given.uniqueBlocked.length) {
+    rows.push({ label: 'Uniques protégées', value: preview.given.uniqueBlocked.join(', '), cls: 'warn' });
+  }
+
+  rows.push({
+    label: 'Confirmation',
+    value: 'Cliquez encore une fois pour appliquer réellement l’échange.',
+    cls: 'warn'
+  });
+
+  return rows;
+}
+
 async function doTrade() {
   const received = parseInput(document.getElementById('trade-received').value);
   const given    = parseInput(document.getElementById('trade-given').value);
@@ -942,41 +962,30 @@ async function doTrade() {
   const payload = { received, given, allowUniqueGiven };
   const tradeKey = JSON.stringify(payload);
 
-  // Premier clic : prévisualisation uniquement, aucun envoi serveur
+  // Premier clic : prévisualisation serveur uniquement, sans écriture collection.
   if (pendingTradeKey !== tradeKey) {
-    pendingTradeKey = tradeKey;
-    const previewRows = [
-      {
-        label: '🟢 Cartes à recevoir',
-        value: received.length ? received.join(', ') : '—',
-        cls: 'ok'
-      },
-      {
-        label: '🔴 Cartes à donner',
-        value: given.length ? given.join(', ') : '—',
-        cls: 'error'
-      }
-    ];
-
-    const uniqueBlocked = allowUniqueGiven ? [] : getUniqueBlockedPreview(given);
-    if (uniqueBlocked.length) {
-      previewRows.push({
-        label: '⚠️ Uniques protégées',
-        value: uniqueBlocked.join(', '),
-        cls: 'warn'
+    btn.disabled = true;
+    btn.textContent = 'Prévisualisation…';
+    try {
+      const preview = await api('/api/trade/preview', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
       });
+
+      pendingTradeKey = tradeKey;
+      renderResult('trade-result', buildTradePreviewRows(preview));
+
+      btn.textContent = "Valider définitivement l'échange";
+      showToast('Vérifiez l’impact, puis cliquez encore une fois pour valider');
+    } catch (err) {
+      console.error(err);
+      pendingTradeKey = null;
+      btn.textContent = "Confirmer l'échange";
+      showToast('⚠️ Prévisualisation impossible');
+    } finally {
+      btn.disabled = false;
     }
-
-    previewRows.push({
-      label: '⚠️ Confirmation',
-      value: 'Cliquez encore une fois sur le bouton pour appliquer réellement l’échange.',
-      cls: 'warn'
-    });
-
-    renderResult('trade-result', previewRows);
-
-    btn.textContent = "Valider définitivement l'échange";
-    showToast('👀 Vérifiez la liste, puis cliquez encore une fois pour valider');
     return;
   }
 

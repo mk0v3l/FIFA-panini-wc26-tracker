@@ -103,6 +103,100 @@ function saveData(data) {
   fs.writeFileSync(DATA_FILE, JSON.stringify(data, null, 2));
 }
 
+function cloneData(data) {
+  return JSON.parse(JSON.stringify(data));
+}
+
+function collectionStats(data) {
+  let owned = 0;
+  let total = 0;
+  let doubles = 0;
+
+  for (const cards of Object.values(data)) {
+    for (const count of Object.values(cards)) {
+      total++;
+      if (count > 0) owned++;
+      if (count >= 2) doubles += count - 1;
+    }
+  }
+
+  const progress = total === 0 ? 0 : Math.round((owned / total) * 100);
+  return { owned, total, doubles, progress };
+}
+
+function buildTradeImpact(before, after, counters) {
+  return {
+    newReceived: counters.newReceived,
+    receivedAsDoubles: counters.receivedAsDoubles,
+    duplicateGiven: counters.duplicateGiven,
+    uniqueBlocked: counters.uniqueBlocked,
+    uniqueGiven: counters.uniqueGiven,
+    before,
+    after
+  };
+}
+
+function processTrade(data, body) {
+  const { received = [], given = [], allowUniqueGiven = false } = body || {};
+  const receivedCards = extractCardCodes(received);
+  const givenCards = extractCardCodes(given);
+  const before = collectionStats(data);
+  const counters = {
+    newReceived: 0,
+    receivedAsDoubles: 0,
+    duplicateGiven: 0,
+    uniqueBlocked: 0,
+    uniqueGiven: 0
+  };
+  const results = {
+    received: { ok: [], unknown: [] },
+    given: { ok: [], unknown: [], refused: [], uniqueBlocked: [], uniqueGiven: [], duplicateGiven: [] }
+  };
+
+  for (const raw of receivedCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.received.unknown.push(raw);
+      continue;
+    }
+    const count = data[parsed.team][parsed.card] || 0;
+    if (count <= 0) counters.newReceived++;
+    else counters.receivedAsDoubles++;
+    data[parsed.team][parsed.card]++;
+    results.received.ok.push(raw);
+  }
+
+  for (const raw of givenCards) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      results.given.unknown.push(raw);
+      continue;
+    }
+    const count = data[parsed.team][parsed.card] || 0;
+    if (count <= 0) {
+      results.given.refused.push(raw);
+      continue;
+    }
+    if (count <= 1) {
+      if (!allowUniqueGiven) {
+        counters.uniqueBlocked++;
+        results.given.uniqueBlocked.push(raw);
+        continue;
+      }
+      counters.uniqueGiven++;
+      results.given.uniqueGiven.push(raw);
+    } else {
+      counters.duplicateGiven++;
+      results.given.duplicateGiven.push(raw);
+    }
+    data[parsed.team][parsed.card]--;
+    results.given.ok.push(raw);
+  }
+
+  results.impact = buildTradeImpact(before, collectionStats(data), counters);
+  return results;
+}
+
 // ─── API ────────────────────────────────────────────────────────────────────
 app.get('/api/teams', (_req, res) => res.json(TEAMS));
 
@@ -242,37 +336,13 @@ app.post('/api/import', (req, res) => {
 
 // ─── Trade ───────────────────────────────────────────────────────────────────
 app.post('/api/trade', (req, res) => {
-  const { received = [], given = [], allowUniqueGiven = false } = req.body;
-  const receivedCards = extractCardCodes(received);
-  const givenCards = extractCardCodes(given);
   const data = loadData();
-  const results = {
-    received: { ok: [], unknown: [] },
-    given: { ok: [], unknown: [], refused: [], uniqueBlocked: [] }
-  };
-  for (const raw of receivedCards) {
-    const parsed = parseCardCode(raw);
-    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
-      results.received.unknown.push(raw); continue;
-    }
-    data[parsed.team][parsed.card]++;
-    results.received.ok.push(raw);
-  }
-  for (const raw of givenCards) {
-    const parsed = parseCardCode(raw);
-    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
-      results.given.unknown.push(raw); continue;
-    }
-    const count = data[parsed.team][parsed.card] || 0;
-    if (count <= 0) {
-      results.given.refused.push(raw); continue;
-    }
-    if (!allowUniqueGiven && count <= 1) {
-      results.given.uniqueBlocked.push(raw); continue;
-    }
-    data[parsed.team][parsed.card]--;
-    results.given.ok.push(raw);
-  }
+  const results = processTrade(data, req.body);
   saveData(data);
   res.json(results);
+});
+
+app.post('/api/trade/preview', (req, res) => {
+  const data = loadData();
+  res.json(processTrade(cloneData(data), req.body));
 });
