@@ -430,6 +430,200 @@ function showToast(msg) {
   toastTimer = setTimeout(() => t.classList.remove('show'), 1500);
 }
 
+// ── Export vers presse-papier ──────────────────────────────────────────────
+// ── Export vers presse-papier ──────────────────────────────────────────────
+async function copyExport(type) {
+  const label = type === 'missing' ? 'cartes manquantes' : 'doublons';
+
+  try {
+    const res = await fetch(`/api/export/${type}`);
+
+    if (!res.ok) {
+      throw new Error(`HTTP ${res.status}`);
+    }
+
+    const text = await res.text();
+
+    const ok = await tryCopyText(text);
+
+    if (ok) {
+      showToast(`📋 ${label} copiés dans le presse-papier`);
+      return;
+    }
+
+    // Si le navigateur bloque la copie auto, on affiche une zone de copie manuelle
+    showCopyFallback(text, label);
+    showToast('⚠️ Copie auto bloquée, copiez depuis la fenêtre ouverte');
+  } catch (err) {
+    console.error(err);
+    showToast(`⚠️ Impossible de récupérer les ${label}`);
+  }
+}
+
+async function tryCopyText(text) {
+  // Méthode moderne : marche surtout en HTTPS ou localhost
+  if (navigator.clipboard && window.isSecureContext) {
+    try {
+      await navigator.clipboard.writeText(text);
+      return true;
+    } catch (err) {
+      console.warn('navigator.clipboard failed:', err);
+    }
+  }
+
+  // Fallback pour HTTP / IP locale
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.setAttribute('readonly', '');
+
+  // Important : pas display:none, sinon iPhone/Safari refuse souvent
+  textarea.style.position = 'fixed';
+  textarea.style.top = '20px';
+  textarea.style.left = '20px';
+  textarea.style.width = '2px';
+  textarea.style.height = '2px';
+  textarea.style.opacity = '0.01';
+  textarea.style.zIndex = '-1';
+
+  document.body.appendChild(textarea);
+
+  textarea.focus();
+  textarea.select();
+  textarea.setSelectionRange(0, textarea.value.length);
+
+  let ok = false;
+
+  try {
+    ok = document.execCommand('copy');
+  } catch (err) {
+    console.warn('execCommand copy failed:', err);
+    ok = false;
+  }
+
+  document.body.removeChild(textarea);
+
+  return ok;
+}
+
+function showCopyFallback(text, label) {
+  const old = document.getElementById('copy-fallback-modal');
+  if (old) old.remove();
+
+  const backdrop = document.createElement('div');
+  backdrop.id = 'copy-fallback-modal';
+
+  backdrop.style.position = 'fixed';
+  backdrop.style.inset = '0';
+  backdrop.style.background = 'rgba(0, 0, 0, 0.55)';
+  backdrop.style.zIndex = '9999';
+  backdrop.style.display = 'flex';
+  backdrop.style.alignItems = 'center';
+  backdrop.style.justifyContent = 'center';
+  backdrop.style.padding = '16px';
+
+  const box = document.createElement('div');
+  box.style.background = '#111827';
+  box.style.color = 'white';
+  box.style.borderRadius = '14px';
+  box.style.padding = '16px';
+  box.style.width = 'min(700px, 100%)';
+  box.style.maxHeight = '85vh';
+  box.style.display = 'flex';
+  box.style.flexDirection = 'column';
+  box.style.gap = '12px';
+
+  const title = document.createElement('div');
+  title.textContent = `Copie des ${label}`;
+  title.style.fontWeight = '700';
+  title.style.fontSize = '18px';
+
+  const help = document.createElement('div');
+  help.textContent = 'La copie automatique est bloquée par le navigateur. Le texte est sélectionné : faites Ctrl+C sur PC, ou appui long puis Copier sur téléphone.';
+  help.style.fontSize = '14px';
+  help.style.opacity = '0.85';
+
+  const textarea = document.createElement('textarea');
+  textarea.value = text;
+  textarea.readOnly = true;
+  textarea.style.width = '100%';
+  textarea.style.height = '45vh';
+  textarea.style.borderRadius = '10px';
+  textarea.style.padding = '12px';
+  textarea.style.fontFamily = 'monospace';
+  textarea.style.fontSize = '14px';
+  textarea.style.resize = 'vertical';
+
+  const buttons = document.createElement('div');
+  buttons.style.display = 'flex';
+  buttons.style.gap = '8px';
+  buttons.style.justifyContent = 'flex-end';
+
+  const copyBtn = document.createElement('button');
+  copyBtn.textContent = 'Copier maintenant';
+  copyBtn.type = 'button';
+  copyBtn.style.padding = '10px 14px';
+  copyBtn.style.borderRadius = '10px';
+  copyBtn.style.cursor = 'pointer';
+
+  const closeBtn = document.createElement('button');
+  closeBtn.textContent = 'Fermer';
+  closeBtn.type = 'button';
+  closeBtn.style.padding = '10px 14px';
+  closeBtn.style.borderRadius = '10px';
+  closeBtn.style.cursor = 'pointer';
+
+  copyBtn.onclick = async () => {
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+
+    let ok = false;
+
+    if (navigator.clipboard && window.isSecureContext) {
+      try {
+        await navigator.clipboard.writeText(textarea.value);
+        ok = true;
+      } catch (err) {
+        ok = false;
+      }
+    }
+
+    if (!ok) {
+      try {
+        ok = document.execCommand('copy');
+      } catch (err) {
+        ok = false;
+      }
+    }
+
+    if (ok) {
+      showToast(`📋 ${label} copiés`);
+      backdrop.remove();
+    } else {
+      showToast('⚠️ Copie encore bloquée : utilisez Ctrl+C ou appui long > Copier');
+    }
+  };
+
+  closeBtn.onclick = () => backdrop.remove();
+
+  buttons.appendChild(copyBtn);
+  buttons.appendChild(closeBtn);
+
+  box.appendChild(title);
+  box.appendChild(help);
+  box.appendChild(textarea);
+  box.appendChild(buttons);
+
+  backdrop.appendChild(box);
+  document.body.appendChild(backdrop);
+
+  setTimeout(() => {
+    textarea.focus();
+    textarea.select();
+    textarea.setSelectionRange(0, textarea.value.length);
+  }, 100);
+}
+
 // ── Init ───────────────────────────────────────────────────────────────────
 async function init() {
   [TEAMS, collection] = await Promise.all([

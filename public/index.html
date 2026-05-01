@@ -29,15 +29,17 @@
 
     <nav id="team-nav"></nav>
 
-    <div class="export-section">
-      <div class="export-title">Exporter</div>
-      <a class="export-btn missing-btn" href="/api/export/missing" download>
-        📋 Cartes manquantes
-      </a>
-      <a class="export-btn doubles-btn" href="/api/export/doubles" download>
-        🔄 Doublons
-      </a>
-    </div>
+      <div class="export-section">
+  <div class="export-title">Copier</div>
+
+  <button type="button" class="export-btn missing-btn" onclick="copyExport('missing')">
+    📋 Cartes manquantes
+  </button>
+
+  <button type="button" class="export-btn doubles-btn" onclick="copyExport('doubles')">
+    🔄 Doublons
+  </button>
+</div>
   </aside>
 
   <!-- ── MAIN ── -->
