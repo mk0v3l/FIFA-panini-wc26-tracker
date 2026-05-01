@@ -437,7 +437,135 @@ function extractCardCodes(input) {
   });
 }
 
+function extractCardCodesDetailed(input) {
+  const values = Array.isArray(input) ? input : [input];
+  const teamCodes = [...TEAMS.map(t => t.code), 'FWC', 'FCW']
+    .sort((a, b) => b.length - a.length)
+    .join('|');
+  const validLikeRe = new RegExp(`\\b(?:00|(?:${teamCodes})\\s*0*\\d{1,2})\\b`, 'gi');
+  const invalidLikeRe = /\b(?!x\s*\d+\b)[A-Z]{2,4}\s*0*\d{1,3}\b/gi;
+  const codes = [];
+  const invalid = [];
+
+  for (const value of values) {
+    let text = String(value || '')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\([^)]*\)/g, ' ')
+      .replace(/\bx\s*\d+\b/gi, ' ');
+
+    text = text.replace(validLikeRe, match => {
+      codes.push(normalizeCardCode(match));
+      return ' ';
+    });
+
+    for (const match of text.matchAll(invalidLikeRe)) {
+      invalid.push(normalizeCardCode(match[0]));
+    }
+  }
+
+  return { codes, invalid };
+}
+
+function cardSortValue(team, card) {
+  if (team === 'FWC') return card === '00' ? 0 : Number(card);
+  const teamIndex = TEAMS.findIndex(t => t.code === team);
+  return 20 + (teamIndex * 20) + Number(card);
+}
+
+function uniqueValidCodes(rawCodes, data) {
+  const seen = new Set();
+  const valid = [];
+  const unknown = [];
+
+  for (const raw of rawCodes) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      unknown.push(raw);
+      continue;
+    }
+
+    const key = `${parsed.team}:${parsed.card}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    valid.push({ ...parsed, code: cardCode(parsed.team, parsed.card), key });
+  }
+
+  return { valid, unknown };
+}
+
+function collectionCodeSet(data, predicate) {
+  const cards = [];
+
+  const addCards = (team, cardMap) => {
+    for (const [card, count] of Object.entries(cardMap || {})) {
+      if (!predicate(count)) continue;
+      cards.push({
+        team,
+        card,
+        code: cardCode(team, card),
+        key: `${team}:${card}`,
+        sort: cardSortValue(team, card)
+      });
+    }
+  };
+
+  addCards('FWC', data.FWC || {});
+  for (const team of TEAMS) addCards(team.code, data[team.code] || {});
+
+  return new Map(cards.sort((a, b) => a.sort - b.sort).map(card => [card.key, card]));
+}
+
+function compareWithFriend(data, body) {
+  const { friendDoubles = '', friendMissing = '' } = body || {};
+  if (
+    !Array.isArray(friendDoubles) && typeof friendDoubles !== 'string' ||
+    !Array.isArray(friendMissing) && typeof friendMissing !== 'string'
+  ) {
+    return { error: 'friendDoubles and friendMissing must be strings or arrays' };
+  }
+
+  const parsedDoubles = extractCardCodesDetailed(friendDoubles);
+  const parsedMissing = extractCardCodesDetailed(friendMissing);
+  const friendDoublesCards = uniqueValidCodes(parsedDoubles.codes, data);
+  const friendMissingCards = uniqueValidCodes(parsedMissing.codes, data);
+  const myMissing = collectionCodeSet(data, count => count === 0);
+  const myDoubles = collectionCodeSet(data, count => count >= 2);
+
+  const friendDoublesByKey = new Map(friendDoublesCards.valid.map(card => [card.key, card]));
+  const friendMissingByKey = new Map(friendMissingCards.valid.map(card => [card.key, card]));
+  const friendCanGive = [...myMissing.keys()]
+    .filter(key => friendDoublesByKey.has(key))
+    .map(key => friendDoublesByKey.get(key));
+  const youCanGive = [...myDoubles.keys()]
+    .filter(key => friendMissingByKey.has(key))
+    .map(key => myDoubles.get(key));
+
+  return {
+    friendCanGive: friendCanGive.map(card => card.code),
+    youCanGive: youCanGive.map(card => card.code),
+    proposedTrade: {
+      received: friendCanGive.map(card => card.code),
+      given: youCanGive.map(card => card.code)
+    },
+    invalid: {
+      friendDoubles: [...parsedDoubles.invalid, ...friendDoublesCards.unknown],
+      friendMissing: [...parsedMissing.invalid, ...friendMissingCards.unknown]
+    },
+    stats: {
+      friendCanGiveCount: friendCanGive.length,
+      youCanGiveCount: youCanGive.length
+    }
+  };
+}
+
 // ─── Import ──────────────────────────────────────────────────────────────────
+app.post('/api/compare', (req, res) => {
+  const data = loadData();
+  const results = compareWithFriend(data, req.body);
+  if (results.error) return res.status(400).json({ error: results.error });
+  res.json(results);
+});
+
 app.post('/api/import', (req, res) => {
   const data = loadData();
   const results = processImport(data, req.body);

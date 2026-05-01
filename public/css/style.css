@@ -801,6 +801,13 @@ textarea.card-input::placeholder { color: var(--text-muted); font-size: 12px; }
 .btn-cancel { background: none; border-color: var(--border); color: var(--text-muted); }
 .btn-confirm-import { background: #1f4068; border-color: #1f6feb; color: #58a6ff; }
 .btn-confirm-trade  { background: #1a2f1a; border-color: #238636; color: #56d364; }
+.btn-confirm-compare { background: #2d2640; border-color: #8957e5; color: #d2a8ff; }
+
+.compare-actions {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 12px;
+}
 
 /* Result box */
 .result-box {
@@ -824,6 +831,20 @@ textarea.card-input::placeholder { color: var(--text-muted); font-size: 12px; }
 .result-val.ok      { color: #56d364; }
 .result-val.warn    { color: var(--accent2); }
 .result-val.error   { color: #f85149; }
+.result-action {
+  background: #1a2f1a;
+  border: 1px solid #238636;
+  color: #56d364;
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 8px 12px;
+}
+.result-action:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
 
 /* FAB (floating action button) */
 #fab {

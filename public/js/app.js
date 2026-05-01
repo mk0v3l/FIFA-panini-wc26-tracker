@@ -845,6 +845,7 @@ init();
 
 // ── Modal ──────────────────────────────────────────────────────────────────
 let activeTab = 'import';
+let lastCompareTrade = { received: [], given: [] };
 
 function openModal() {
   document.getElementById('modal-backdrop').classList.add('open');
@@ -856,11 +857,15 @@ function closeModal() {
   document.getElementById('modal-backdrop').classList.remove('open');
   document.getElementById('import-result').innerHTML = '';
   document.getElementById('trade-result').innerHTML = '';
+  document.getElementById('compare-result').innerHTML = '';
   document.getElementById('import-input').value = '';
   document.getElementById('trade-received').value = '';
   document.getElementById('trade-given').value = '';
   document.getElementById('trade-allow-unique').checked = false;
+  document.getElementById('compare-friend-doubles').value = '';
+  document.getElementById('compare-friend-missing').value = '';
 
+  lastCompareTrade = { received: [], given: [] };
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
 }
@@ -871,13 +876,15 @@ function handleBackdropClick(e) {
 
 function switchTab(tab) {
   activeTab = tab;
-  document.querySelectorAll('.modal-tab').forEach((el, i) => {
-    el.classList.toggle('active', (i === 0 && tab === 'import') || (i === 1 && tab === 'trade'));
+  document.querySelectorAll('.modal-tab').forEach(el => {
+    el.classList.toggle('active', el.dataset.tab === tab);
   });
   document.getElementById('tab-import').classList.toggle('active', tab === 'import');
   document.getElementById('tab-trade').classList.toggle('active',  tab === 'trade');
+  document.getElementById('tab-compare').classList.toggle('active', tab === 'compare');
   document.getElementById('btn-import').style.display = tab === 'import' ? '' : 'none';
   document.getElementById('btn-trade').style.display  = tab === 'trade'  ? '' : 'none';
+  document.getElementById('btn-compare').style.display = tab === 'compare' ? '' : 'none';
   document.getElementById('import-result').innerHTML = '';
   document.getElementById('trade-result').innerHTML  = '';
 }
@@ -911,6 +918,111 @@ function renderResult(containerId, rows) {
       <span class="result-val ${r.cls}">${r.value || '—'}</span>
     </div>`).join('')
   }</div>`;
+}
+
+function codesValue(codes) {
+  return codes && codes.length ? codes.join(', ') : null;
+}
+
+function renderCompareResult(compare) {
+  const rows = [
+    {
+      label: 'Cartes de son stock utiles pour moi',
+      value: codesValue(compare.friendCanGive),
+      cls: 'ok'
+    },
+    {
+      label: 'Cartes que je peux lui donner',
+      value: codesValue(compare.youCanGive),
+      cls: 'ok'
+    },
+    {
+      label: 'Échange proposé - je reçois',
+      value: codesValue(compare.proposedTrade.received),
+      cls: 'ok'
+    },
+    {
+      label: 'Échange proposé - je donne',
+      value: codesValue(compare.proposedTrade.given),
+      cls: 'warn'
+    }
+  ];
+
+  if (compare.invalid.friendDoubles.length) {
+    rows.push({
+      label: 'Codes invalides dans ses doublons',
+      value: compare.invalid.friendDoubles.join(', '),
+      cls: 'error'
+    });
+  }
+  if (compare.invalid.friendMissing.length) {
+    rows.push({
+      label: 'Codes invalides dans ses manquantes',
+      value: compare.invalid.friendMissing.join(', '),
+      cls: 'error'
+    });
+  }
+
+  renderResult('compare-result', rows);
+
+  const box = document.getElementById('compare-result');
+  const hasTrade = compare.proposedTrade.received.length || compare.proposedTrade.given.length;
+  const actions = document.createElement('div');
+  actions.className = 'compare-actions';
+  const btn = document.createElement('button');
+  btn.type = 'button';
+  btn.className = 'result-action';
+  btn.textContent = "Envoyer vers l'échange";
+  btn.disabled = !hasTrade;
+  btn.onclick = fillTradeFromCompare;
+  actions.appendChild(btn);
+  box.appendChild(actions);
+}
+
+async function doCompare() {
+  const friendDoubles = document.getElementById('compare-friend-doubles').value;
+  const friendMissing = document.getElementById('compare-friend-missing').value;
+
+  if (!friendDoubles.trim() && !friendMissing.trim()) {
+    showToast('⚠️ Aucune liste saisie');
+    return;
+  }
+
+  const btn = document.getElementById('btn-compare');
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const res = await api('/api/compare', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ friendDoubles, friendMissing }),
+    });
+
+    if (res.error) {
+      showToast('⚠️ Comparaison impossible');
+      return;
+    }
+
+    lastCompareTrade = {
+      received: res.proposedTrade.received,
+      given: res.proposedTrade.given
+    };
+    renderCompareResult(res);
+    showToast('Comparaison prête');
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Comparer';
+  }
+}
+
+function fillTradeFromCompare() {
+  document.getElementById('trade-received').value = lastCompareTrade.received.join('\n');
+  document.getElementById('trade-given').value = lastCompareTrade.given.join('\n');
+  pendingTradeKey = null;
+  document.getElementById('btn-trade').textContent = "Confirmer l'échange";
+  switchTab('trade');
+  showToast("Listes envoyées vers l'échange");
 }
 
 async function doImport() {
