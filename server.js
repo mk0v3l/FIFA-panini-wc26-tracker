@@ -190,6 +190,10 @@ function finalizeDeltas(deltaMap, data) {
   });
 }
 
+function changedDeltas(deltas) {
+  return (Array.isArray(deltas) ? deltas : []).filter(delta => delta.delta !== 0);
+}
+
 function appendHistoryEntry(entry) {
   const history = loadHistory();
   history.push(entry);
@@ -197,12 +201,37 @@ function appendHistoryEntry(entry) {
 }
 
 function buildHistoryEntry(type, payload) {
+  const deltas = changedDeltas(payload.deltas);
+  const cards = deltas.map(delta => ({
+    team: delta.team,
+    card: delta.card,
+    code: delta.code || cardCode(delta.team, delta.card),
+    before: delta.before,
+    after: delta.after,
+    delta: delta.delta
+  }));
+
   return {
     id: createHistoryId(),
     date: new Date().toISOString(),
     type,
+    source: payload.source || type,
+    cards,
+    deltas,
     ...payload
   };
+}
+
+function appendCollectionHistory(type, payload) {
+  const deltas = changedDeltas(payload.deltas);
+  if (!deltas.length) return null;
+
+  const entry = buildHistoryEntry(type, {
+    ...payload,
+    deltas
+  });
+  appendHistoryEntry(entry);
+  return entry;
 }
 
 function processImport(data, body) {
@@ -307,43 +336,99 @@ app.get('/api/history', (_req, res) => {
 
 app.post('/api/undo-last', (_req, res) => {
   const history = loadHistory();
-  const entry = history.pop();
-  if (!entry) return res.status(404).json({ error: 'No history to undo' });
-  if (!Array.isArray(entry.deltas)) {
-    return res.status(400).json({ error: 'Last history entry cannot be undone' });
-  }
+  const entryIndex = history.findLastIndex(entry => entry.type !== 'undo' && Array.isArray(entry.deltas) && entry.deltas.length > 0);
+  if (entryIndex === -1) return res.status(404).json({ error: 'No history to undo' });
+  const [entry] = history.splice(entryIndex, 1);
 
   const data = loadData();
+  const undoDeltas = [];
   for (const delta of entry.deltas) {
     if (!data[delta.team] || !(delta.card in data[delta.team])) {
       return res.status(400).json({ error: 'History entry references an invalid card' });
     }
+    const before = data[delta.team][delta.card] || 0;
     data[delta.team][delta.card] = Math.max(0, Number(delta.before) || 0);
+    const after = data[delta.team][delta.card] || 0;
+    if (before !== after) {
+      undoDeltas.push({
+        team: delta.team,
+        card: delta.card,
+        code: delta.code || cardCode(delta.team, delta.card),
+        before,
+        after,
+        delta: after - before
+      });
+    }
   }
 
   saveData(data);
+  if (undoDeltas.length) {
+    history.push(buildHistoryEntry('undo', {
+      source: 'undo',
+      undoneHistoryId: entry.id,
+      undoneType: entry.type,
+      summary: `Undo ${entry.type}`,
+      deltas: undoDeltas
+    }));
+  }
   saveHistory(history);
   res.json({ ok: true, undone: entry });
 });
 
 app.patch('/api/card', (req, res) => {
-  const { team, card, delta } = req.body;
+  const { team, card, delta, source = 'manual_click' } = req.body;
   const data = loadData();
   if (!data[team] || !(card in data[team])) {
     return res.status(400).json({ error: 'Invalid team or card' });
   }
-  data[team][card] = Math.max(0, (data[team][card] || 0) + delta);
+  const numericDelta = Number(delta);
+  if (!Number.isInteger(numericDelta)) {
+    return res.status(400).json({ error: 'Invalid delta' });
+  }
+  const before = data[team][card] || 0;
+  const after = Math.max(0, before + numericDelta);
+  if (after === before) {
+    return res.json({ team, card, count: before, changed: false });
+  }
+
+  data[team][card] = after;
   saveData(data);
-  res.json({ team, card, count: data[team][card] });
+  const code = cardCode(team, card);
+  const historyType = after > before ? 'manual_add' : 'manual_remove';
+  const appliedDelta = after - before;
+  const entry = appendCollectionHistory(historyType, {
+    source,
+    summary: `${appliedDelta > 0 ? '+' : ''}${appliedDelta} ${code}`,
+    deltas: [{ team, card, code, before, after, delta: appliedDelta }]
+  });
+  res.json({ team, card, count: data[team][card], changed: true, historyId: entry?.id });
 });
 
 app.post('/api/reset/:team', (req, res) => {
   const { team } = req.params;
   const data = loadData();
   if (!data[team]) return res.status(400).json({ error: 'Invalid team' });
-  for (const key of Object.keys(data[team])) data[team][key] = 0;
+  const deltas = [];
+  for (const key of Object.keys(data[team])) {
+    const before = data[team][key] || 0;
+    if (before <= 0) continue;
+    data[team][key] = 0;
+    deltas.push({
+      team,
+      card: key,
+      code: cardCode(team, key),
+      before,
+      after: 0,
+      delta: -before
+    });
+  }
   saveData(data);
-  res.json({ ok: true });
+  const entry = appendCollectionHistory('reset', {
+    source: 'reset',
+    summary: `Reset ${team}`,
+    deltas
+  });
+  res.json({ ok: true, historyId: entry?.id });
 });
 
 app.get('/api/export/:type', (req, res) => {
@@ -606,14 +691,15 @@ app.post('/api/import', (req, res) => {
   if (results.error) return res.status(400).json({ error: results.error });
 
   if (results.ok.length) {
-    const entry = buildHistoryEntry('import', {
+    const entry = appendCollectionHistory('import', {
+      source: 'import',
+      summary: `Import ${results.ok.length} carte(s)`,
       imported: results.ok,
       received: [],
       given: [],
       deltas: results.deltas
     });
-    appendHistoryEntry(entry);
-    results.historyId = entry.id;
+    if (entry) results.historyId = entry.id;
   }
 
   saveData(data);
@@ -625,14 +711,15 @@ app.post('/api/trade', (req, res) => {
   const data = loadData();
   const results = processTrade(data, req.body);
   if (results.received.ok.length || results.given.ok.length) {
-    const entry = buildHistoryEntry('trade', {
+    const entry = appendCollectionHistory('trade', {
+      source: 'trade',
+      summary: `Echange +${results.received.ok.length} / -${results.given.ok.length}`,
       imported: [],
       received: results.received.ok,
       given: results.given.ok,
       deltas: results.deltas
     });
-    appendHistoryEntry(entry);
-    results.historyId = entry.id;
+    if (entry) results.historyId = entry.id;
   }
   saveData(data);
   res.json(results);

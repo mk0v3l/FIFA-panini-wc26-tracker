@@ -103,11 +103,11 @@ async function api(path, options = {}) {
   return res.json();
 }
 
-async function patchCard(team, card, delta) {
+async function patchCard(team, card, delta, source = 'manual_click') {
   return api('/api/card', {
     method: 'PATCH',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ team, card, delta }),
+    body: JSON.stringify({ team, card, delta, source }),
   });
 }
 
@@ -297,7 +297,7 @@ async function adjustQuickCard(delta) {
     renderQuickCardSearch();
     return;
   }
-  await applyCardDelta(parsed.team, parsed.card, delta, findRenderedCard(parsed.team, parsed.card));
+  await applyCardDelta(parsed.team, parsed.card, delta, findRenderedCard(parsed.team, parsed.card), 'quick_search');
 }
 
 // ── Sidebar rendering ──────────────────────────────────────────────────────
@@ -451,12 +451,28 @@ function formatHistoryDate(value) {
   });
 }
 
+function historyTitle(entry) {
+  const titles = {
+    import: 'Import',
+    trade: 'Echange',
+    manual_add: 'Ajout manuel',
+    manual_remove: 'Retrait manuel',
+    reset: 'Reset',
+    undo: 'Annulation'
+  };
+  return titles[entry.type] || 'Action';
+}
+
+function canUndoHistoryEntry(entry) {
+  return entry.type !== 'undo' && Array.isArray(entry.deltas) && entry.deltas.length > 0;
+}
+
 function renderHistory() {
   const list = document.getElementById('history-list');
   const undoBtn = document.getElementById('undo-last-btn');
   if (!list || !undoBtn) return;
 
-  undoBtn.disabled = historyEntries.length === 0;
+  undoBtn.disabled = !historyEntries.some(canUndoHistoryEntry);
   if (!historyEntries.length) {
     list.innerHTML = '<div class="history-empty">Aucune action récente</div>';
     return;
@@ -466,8 +482,9 @@ function renderHistory() {
     const count = Array.isArray(entry.deltas)
       ? entry.deltas.reduce((sum, delta) => sum + Math.abs(delta.delta || 0), 0)
       : 0;
-    const title = entry.type === 'trade' ? 'Echange' : 'Import';
+    const title = historyTitle(entry);
     const parts = [];
+    if (entry.summary) parts.push(entry.summary);
     if (entry.imported && entry.imported.length) parts.push(`${entry.imported.length} importée(s)`);
     if (entry.received && entry.received.length) parts.push(`${entry.received.length} reçue(s)`);
     if (entry.given && entry.given.length) parts.push(`${entry.given.length} donnée(s)`);
@@ -527,6 +544,7 @@ function formatHistorySummary(entry) {
     ? entry.deltas.reduce((sum, delta) => sum + Math.abs(delta.delta || 0), 0)
     : 0;
   const parts = [];
+  if (entry.summary) parts.push(entry.summary);
   if (entry.imported && entry.imported.length) parts.push(`${entry.imported.length} importée(s)`);
   if (entry.received && entry.received.length) parts.push(`${entry.received.length} reçue(s)`);
   if (entry.given && entry.given.length) parts.push(`${entry.given.length} donnée(s)`);
@@ -544,7 +562,7 @@ function renderDashboardHistory() {
   }
 
   list.innerHTML = historyEntries.slice(0, 4).map(entry => {
-    const title = entry.type === 'trade' ? 'Echange' : 'Import';
+    const title = historyTitle(entry);
     return `<div class="dashboard-history-item">
       <div class="dashboard-history-title">
         <span>${title}</span>
@@ -819,10 +837,10 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null) {
 }
 
 async function handleCardAction(teamCode, cardKey, delta, el) {
-  await applyCardDelta(teamCode, cardKey, delta, el);
+  await applyCardDelta(teamCode, cardKey, delta, el, 'manual_click');
 }
 
-async function applyCardDelta(teamCode, cardKey, delta, el = null) {
+async function applyCardDelta(teamCode, cardKey, delta, el = null, source = 'manual_click') {
   const current = collection[teamCode][cardKey] ?? 0;
   const next = Math.max(0, current + delta);
   if (next === current) return;
@@ -846,7 +864,7 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null) {
   }
 
   // Sync with server (fire-and-forget)
-  patchCard(teamCode, cardKey, delta).catch(() => {
+  patchCard(teamCode, cardKey, delta, source).then(refreshHistory).catch(() => {
     // Rollback on error
     collection[teamCode][cardKey] = current;
     if (cardEl) updateCardEl(cardEl, teamCode, cardKey, current);
@@ -1597,7 +1615,7 @@ async function undoLastAction() {
     console.error(err);
     showToast('⚠️ Annulation impossible');
   } finally {
-    btn.disabled = historyEntries.length === 0;
+    btn.disabled = !historyEntries.some(canUndoHistoryEntry);
   }
 }
 // Keyboard shortcut: Escape closes modal
