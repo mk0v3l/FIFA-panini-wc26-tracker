@@ -10,6 +10,12 @@ const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const PENDING_TRADES_FILE = path.join(DATA_DIR, 'pending-trades.json');
 
 app.use(express.json());
+app.use((err, _req, res, next) => {
+  if (err instanceof SyntaxError && err.status === 400 && 'body' in err) {
+    return res.status(400).json({ error: 'Invalid JSON body' });
+  }
+  return next(err);
+});
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── Teams data ────────────────────────────────────────────────────────────
@@ -735,6 +741,25 @@ app.post('/api/pending-trades/:id/cancel', (req, res) => {
   appendHistoryEntry(entry);
 
   res.json({ ok: true, trade: trades[index], historyId: entry.id });
+});
+
+app.patch('/api/pending-trades/:id/note', (req, res) => {
+  const trades = loadPendingTrades();
+  const index = trades.findIndex(trade => trade.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Pending trade not found' });
+  if (trades[index].status !== 'pending') {
+    return res.status(400).json({ error: 'Only pending trades can be edited' });
+  }
+
+  const rawNote = req.body && typeof req.body.note === 'string' ? req.body.note : '';
+  if (rawNote.length > 500) {
+    return res.status(400).json({ error: 'Note is too long', maxLength: 500 });
+  }
+
+  const note = rawNote.trim();
+  trades[index] = { ...trades[index], note };
+  savePendingTrades(trades);
+  res.json({ ok: true, trade: trades[index] });
 });
 
 app.post('/api/pending-trades/:id/complete', (req, res) => {

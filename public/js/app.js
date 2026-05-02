@@ -766,13 +766,80 @@ function renderPendingTrades() {
           <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
         </div>
       </div>
-      ${trade.note ? `<div class="pending-note">${escapeHtml(trade.note)}</div>` : ''}
+      <div class="pending-note-block" id="pending-note-${trade.id}">
+        ${renderPendingTradeNote(trade)}
+      </div>
       <div class="pending-actions">
         <button type="button" class="pending-action complete" onclick="completePendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Confirmer physiquement</button>
         <button type="button" class="pending-action cancel" onclick="cancelPendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Annuler l’échange virtuel</button>
       </div>
     </article>`;
   }).join('');
+}
+
+function renderPendingTradeNote(trade, editing = false) {
+  const pending = trade.status === 'pending';
+  const note = trade.note || '';
+  if (editing) {
+    return `<div class="pending-note-editor">
+      <textarea class="pending-note-input" id="pending-note-input-${trade.id}" maxlength="500">${escapeHtml(note)}</textarea>
+      <div class="pending-note-actions">
+        <button type="button" class="pending-action note-save" onclick="savePendingTradeNote('${trade.id}')">Enregistrer</button>
+        <button type="button" class="pending-action note-cancel" onclick="cancelPendingTradeNoteEdit('${trade.id}')">Annuler</button>
+      </div>
+    </div>`;
+  }
+
+  return `<div class="pending-note-display">
+    ${note ? `<div class="pending-note">${escapeHtml(note)}</div>` : `<div class="pending-note empty">Aucune note</div>`}
+    <button type="button" class="pending-note-edit" onclick="editPendingTradeNote('${trade.id}')" ${pending ? '' : 'disabled'}>
+      ${note ? 'Modifier la note' : 'Ajouter une note'}
+    </button>
+  </div>`;
+}
+
+function pendingTradeById(id) {
+  return pendingTrades.find(trade => trade.id === id);
+}
+
+function updatePendingTradeNoteBlock(id, editing = false) {
+  const trade = pendingTradeById(id);
+  const block = document.getElementById(`pending-note-${id}`);
+  if (!trade || !block) return;
+  block.innerHTML = renderPendingTradeNote(trade, editing);
+}
+
+function editPendingTradeNote(id) {
+  updatePendingTradeNoteBlock(id, true);
+}
+
+function cancelPendingTradeNoteEdit(id) {
+  updatePendingTradeNoteBlock(id, false);
+}
+
+async function savePendingTradeNote(id) {
+  const input = document.getElementById(`pending-note-input-${id}`);
+  if (!input) return;
+
+  try {
+    const res = await api(`/api/pending-trades/${encodeURIComponent(id)}/note`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ note: input.value }),
+    });
+    if (res.error) {
+      showToast(res.error);
+      return;
+    }
+
+    const index = pendingTrades.findIndex(trade => trade.id === id);
+    if (index !== -1) pendingTrades[index] = res.trade;
+    updatePendingTradeNoteBlock(id, false);
+    showToast('Note mise à jour');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Note impossible à enregistrer');
+  }
 }
 
 async function refreshPendingTrades() {

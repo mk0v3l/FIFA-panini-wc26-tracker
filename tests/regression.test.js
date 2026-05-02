@@ -396,6 +396,63 @@ async function main() {
     writePendingTrades([]);
   });
 
+  await test('pending trade notes can be added edited and removed safely', async () => {
+    const create = await post('/api/pending-trades', { received: ['MEX1'], given: [], note: '' });
+    assert.strictEqual(create.status, 200);
+    const id = create.body.trade.id;
+    const beforeCollection = snapshotCollection();
+    let beforeHistory = snapshotDataFile('history.json');
+
+    const specialNote = '<script>alert(1)</script> & "test"';
+    const add = await patch(`/api/pending-trades/${id}/note`, { note: specialNote });
+    assert.strictEqual(add.status, 200);
+    assert.strictEqual(add.body.trade.note, specialNote);
+    assert.strictEqual(add.body.trade.status, 'pending');
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+    assert.strictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === id).note, specialNote);
+
+    beforeHistory = snapshotDataFile('history.json');
+    const edit = await patch(`/api/pending-trades/${id}/note`, { note: '  Note modifiée  ' });
+    assert.strictEqual(edit.status, 200);
+    assert.strictEqual(edit.body.trade.note, 'Note modifiée');
+    assert.strictEqual(edit.body.trade.status, 'pending');
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+
+    const remove = await patch(`/api/pending-trades/${id}/note`, { note: '   ' });
+    assert.strictEqual(remove.status, 200);
+    assert.strictEqual(remove.body.trade.note, '');
+
+    const beforePending = snapshotDataFile('pending-trades.json');
+    const tooLong = await patch(`/api/pending-trades/${id}/note`, { note: 'x'.repeat(501) });
+    assert.strictEqual(tooLong.status, 400);
+    assert.match(tooLong.body.error, /too long/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
+
+    const missingBeforePending = snapshotDataFile('pending-trades.json');
+    const missingBeforeCollection = snapshotCollection();
+    const missing = await patch('/api/pending-trades/does-not-exist/note', { note: 'nope' });
+    assert.strictEqual(missing.status, 404);
+    assert.match(missing.headers.get('content-type') || '', /application\/json/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), missingBeforePending);
+    assert.strictEqual(snapshotCollection(), missingBeforeCollection);
+
+    const invalidJson = await request(`/api/pending-trades/${id}/note`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: '{bad json'
+    });
+    assert.strictEqual(invalidJson.status, 400);
+    assert.match(invalidJson.headers.get('content-type') || '', /application\/json/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), missingBeforePending);
+
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    assert.ok(appJs.includes('escapeHtml(note)'));
+
+    writePendingTrades([]);
+  });
+
   await test('friend comparison works and does not mutate collection', async () => {
     await setCount('ESP', '4', 0);
     await setCount('FRA', '3', 2);

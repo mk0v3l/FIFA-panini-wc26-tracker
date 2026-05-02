@@ -498,6 +498,62 @@ a { text-decoration: none; color: inherit; }
   margin-top: 3px;
 }
 
+.pending-note-block {
+  margin-top: 12px;
+}
+
+.pending-note-display {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.pending-note {
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.pending-note.empty {
+  font-style: italic;
+}
+
+.pending-note-edit {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 9px;
+}
+
+.pending-note-edit:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.pending-note-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  min-height: 72px;
+  padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.pending-note-actions {
+  display: flex;
+  gap: 8px;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+
 .pending-status {
   background: var(--surface2);
   border: 1px solid var(--border);
@@ -564,6 +620,17 @@ a { text-decoration: none; color: inherit; }
   background: #3d2200;
   border-color: #9e6a03;
   color: var(--accent2);
+}
+
+.pending-action.note-save {
+  background: #1a2f1a;
+  border-color: #238636;
+  color: #56d364;
+}
+
+.pending-action.note-cancel {
+  background: var(--surface2);
+  color: var(--text-muted);
 }
 
 .pending-action:disabled {
@@ -1415,12 +1482,15 @@ a { text-decoration: none; color: inherit; }
   }
 
   .pending-actions,
+  .pending-note-actions,
+  .pending-note-display,
   .pending-trade-header {
     align-items: stretch;
     flex-direction: column;
   }
 
-  .pending-action {
+  .pending-action,
+  .pending-note-edit {
     width: 100%;
   }
 
