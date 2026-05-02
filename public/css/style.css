@@ -304,6 +304,12 @@ a { text-decoration: none; color: inherit; }
   background: var(--bg);
   padding: 8px;
 }
+.history-item.reverted {
+  opacity: 0.72;
+}
+.history-item.revert-entry {
+  border-color: #8957e5;
+}
 .history-item-title {
   display: flex;
   justify-content: space-between;
@@ -316,6 +322,30 @@ a { text-decoration: none; color: inherit; }
   color: var(--text-muted);
   font-size: 11px;
   line-height: 1.35;
+}
+.history-item-actions {
+  align-items: center;
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 8px;
+}
+.history-revert-btn {
+  background: #3d2200;
+  border: 1px solid #9e6a03;
+  border-radius: var(--radius);
+  color: var(--accent2);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 7px 10px;
+}
+.history-revert-btn:hover {
+  opacity: 0.85;
+}
+.history-state {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 600;
 }
 
 /* ── Main ─────────────────────────────────────────────────── */

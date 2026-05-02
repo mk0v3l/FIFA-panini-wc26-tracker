@@ -121,6 +121,10 @@ async function undoLast() {
   return api('/api/undo-last', { method: 'POST' });
 }
 
+async function revertHistoryEntry(id) {
+  return api(`/api/history/${encodeURIComponent(id)}/revert`, { method: 'POST' });
+}
+
 // ── Progress calculation ───────────────────────────────────────────────────
 function teamProgress(code) {
   const cards = collection[code];
@@ -476,13 +480,21 @@ function historyTitle(entry) {
     manual_add: 'Ajout manuel',
     manual_remove: 'Retrait manuel',
     reset: 'Reset',
-    undo: 'Annulation'
+    undo: 'Annulation',
+    revert: 'Annulation'
   };
   return titles[entry.type] || 'Action';
 }
 
 function canUndoHistoryEntry(entry) {
-  return entry.type !== 'undo' && Array.isArray(entry.deltas) && entry.deltas.length > 0;
+  return !entry.reverted && !['undo', 'revert'].includes(entry.type) && Array.isArray(entry.deltas) && entry.deltas.length > 0;
+}
+
+function historyStateLabel(entry) {
+  if (entry.type === 'revert' || entry.type === 'undo') return 'Action d’annulation';
+  if (entry.reverted) return 'Déjà annulée';
+  if (!Array.isArray(entry.deltas) || entry.deltas.length === 0) return 'Non annulable';
+  return null;
 }
 
 function renderHistory() {
@@ -496,24 +508,31 @@ function renderHistory() {
     return;
   }
 
-  list.innerHTML = historyEntries.slice(0, 5).map(entry => {
+  list.innerHTML = historyEntries.map(entry => {
     const count = Array.isArray(entry.deltas)
       ? entry.deltas.reduce((sum, delta) => sum + Math.abs(delta.delta || 0), 0)
       : 0;
     const title = historyTitle(entry);
     const parts = [];
     if (entry.summary) parts.push(entry.summary);
+    if (entry.revertedAt) parts.push(`Annulée le ${formatHistoryDate(entry.revertedAt)}`);
+    if (entry.revertedHistoryId) parts.push(`Annule ${entry.revertedType || 'une action'}`);
     if (entry.imported && entry.imported.length) parts.push(`${entry.imported.length} importée(s)`);
     if (entry.received && entry.received.length) parts.push(`${entry.received.length} reçue(s)`);
     if (entry.given && entry.given.length) parts.push(`${entry.given.length} donnée(s)`);
     if (!parts.length && count) parts.push(`${count} modification(s)`);
+    const state = historyStateLabel(entry);
+    const action = canUndoHistoryEntry(entry)
+      ? `<button type="button" class="history-revert-btn" onclick="revertHistoryAction('${entry.id}')">Annuler cette action</button>`
+      : `<span class="history-state">${state || 'Non annulable'}</span>`;
 
-    return `<div class="history-item">
+    return `<div class="history-item${entry.reverted ? ' reverted' : ''}${entry.type === 'revert' || entry.type === 'undo' ? ' revert-entry' : ''}">
       <div class="history-item-title">
         <span>${title}</span>
         <span>${formatHistoryDate(entry.date)}</span>
       </div>
       <div class="history-item-meta">${parts.join(' · ') || 'Action enregistrée'}</div>
+      <div class="history-item-actions">${action}</div>
     </div>`;
   }).join('');
 }
@@ -1674,6 +1693,25 @@ async function undoLastAction() {
     showToast('⚠️ Annulation impossible');
   } finally {
     btn.disabled = !historyEntries.some(canUndoHistoryEntry);
+  }
+}
+
+async function revertHistoryAction(id) {
+  try {
+    const res = await revertHistoryEntry(id);
+    if (res.error) {
+      showToast(res.error);
+      return;
+    }
+
+    collection = await api('/api/collection');
+    refreshCollectionViews();
+    renderQuickCardSearch();
+    await refreshHistory();
+    showToast('Action annulée');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Annulation impossible');
   }
 }
 // Keyboard shortcut: Escape closes modal

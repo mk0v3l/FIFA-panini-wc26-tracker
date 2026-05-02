@@ -234,6 +234,90 @@ function appendCollectionHistory(type, payload) {
   return entry;
 }
 
+function isReversibleHistoryEntry(entry) {
+  return Boolean(
+    entry &&
+    !entry.reverted &&
+    !['undo', 'revert'].includes(entry.type) &&
+    Array.isArray(entry.deltas) &&
+    changedDeltas(entry.deltas).length > 0
+  );
+}
+
+function revertHistoryEntry(history, entryIndex, data) {
+  const entry = history[entryIndex];
+  if (!entry) return { status: 404, error: 'History entry not found' };
+  if (entry.reverted) return { status: 400, error: 'History entry already reverted' };
+  if (!isReversibleHistoryEntry(entry)) {
+    return { status: 400, error: 'History entry is not reversible' };
+  }
+
+  const inverseByKey = new Map();
+  for (const delta of changedDeltas(entry.deltas)) {
+    if (!data[delta.team] || !(delta.card in data[delta.team])) {
+      return { status: 400, error: 'History entry references an invalid card' };
+    }
+    const key = `${delta.team}:${delta.card}`;
+    const existing = inverseByKey.get(key) || {
+      team: delta.team,
+      card: delta.card,
+      code: delta.code || cardCode(delta.team, delta.card),
+      delta: 0
+    };
+    existing.delta -= Number(delta.delta) || 0;
+    inverseByKey.set(key, existing);
+  }
+
+  const revertDeltas = [];
+  for (const inverse of inverseByKey.values()) {
+    const before = data[inverse.team][inverse.card] || 0;
+    const after = before + inverse.delta;
+    if (after < 0) {
+      return {
+        status: 409,
+        error: `Impossible d’annuler cette action : ${inverse.code} descendrait sous 0.`,
+        code: inverse.code
+      };
+    }
+    if (after !== before) {
+      revertDeltas.push({
+        team: inverse.team,
+        card: inverse.card,
+        code: inverse.code,
+        before,
+        after,
+        delta: after - before
+      });
+    }
+  }
+
+  if (!revertDeltas.length) {
+    return { status: 400, error: 'Revert would not change the collection' };
+  }
+
+  for (const delta of revertDeltas) {
+    data[delta.team][delta.card] = delta.after;
+  }
+
+  const revertEntry = buildHistoryEntry('revert', {
+    source: 'history_revert',
+    revertedHistoryId: entry.id,
+    revertedType: entry.type,
+    summary: `Annulation de ${entry.summary || entry.type}`,
+    deltas: revertDeltas
+  });
+
+  history[entryIndex] = {
+    ...entry,
+    reverted: true,
+    revertedAt: revertEntry.date,
+    revertedByHistoryId: revertEntry.id
+  };
+  history.push(revertEntry);
+
+  return { entry: history[entryIndex], revertEntry };
+}
+
 function processImport(data, body) {
   const { cards } = body || {};
   if (!Array.isArray(cards) && typeof cards !== 'string') {
@@ -336,43 +420,29 @@ app.get('/api/history', (_req, res) => {
 
 app.post('/api/undo-last', (_req, res) => {
   const history = loadHistory();
-  const entryIndex = history.findLastIndex(entry => entry.type !== 'undo' && Array.isArray(entry.deltas) && entry.deltas.length > 0);
+  const entryIndex = history.findLastIndex(isReversibleHistoryEntry);
   if (entryIndex === -1) return res.status(404).json({ error: 'No history to undo' });
-  const [entry] = history.splice(entryIndex, 1);
-
   const data = loadData();
-  const undoDeltas = [];
-  for (const delta of entry.deltas) {
-    if (!data[delta.team] || !(delta.card in data[delta.team])) {
-      return res.status(400).json({ error: 'History entry references an invalid card' });
-    }
-    const before = data[delta.team][delta.card] || 0;
-    data[delta.team][delta.card] = Math.max(0, Number(delta.before) || 0);
-    const after = data[delta.team][delta.card] || 0;
-    if (before !== after) {
-      undoDeltas.push({
-        team: delta.team,
-        card: delta.card,
-        code: delta.code || cardCode(delta.team, delta.card),
-        before,
-        after,
-        delta: after - before
-      });
-    }
-  }
+  const result = revertHistoryEntry(history, entryIndex, data);
+  if (result.error) return res.status(result.status || 400).json({ error: result.error, code: result.code });
 
   saveData(data);
-  if (undoDeltas.length) {
-    history.push(buildHistoryEntry('undo', {
-      source: 'undo',
-      undoneHistoryId: entry.id,
-      undoneType: entry.type,
-      summary: `Undo ${entry.type}`,
-      deltas: undoDeltas
-    }));
-  }
   saveHistory(history);
-  res.json({ ok: true, undone: entry });
+  res.json({ ok: true, undone: result.entry, revert: result.revertEntry });
+});
+
+app.post('/api/history/:id/revert', (req, res) => {
+  const history = loadHistory();
+  const entryIndex = history.findIndex(entry => entry.id === req.params.id);
+  if (entryIndex === -1) return res.status(404).json({ error: 'History entry not found' });
+
+  const data = loadData();
+  const result = revertHistoryEntry(history, entryIndex, data);
+  if (result.error) return res.status(result.status || 400).json({ error: result.error, code: result.code });
+
+  saveData(data);
+  saveHistory(history);
+  res.json({ ok: true, reverted: result.entry, revert: result.revertEntry });
 });
 
 app.patch('/api/card', (req, res) => {
