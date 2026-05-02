@@ -4,7 +4,9 @@
   "description": "Panini FIFA WC Sticker Album Tracker",
   "main": "server.js",
   "scripts": {
-    "start": "node server.js"
+    "start": "node server.js",
+    "test": "node tests/regression.test.js",
+    "test:regression": "node tests/regression.test.js"
   },
   "dependencies": {
     "express": "^4.18.2"

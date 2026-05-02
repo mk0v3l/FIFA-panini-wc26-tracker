@@ -22,6 +22,8 @@ Fichiers importants :
 - Ne jamais utiliser `eval`, `Function`, ou exécuter du contenu venant de l’utilisateur.
 - Valider/sanitizer les codes cartes côté serveur.
 - Les routes qui modifient la collection doivent retourner du JSON propre, jamais du HTML.
+- Après chaque story fonctionnelle, mettre à jour `tests/regression.test.js` avec les tests de non-régression de cette story.
+- Avant tout commit de story, lancer `npm test` ou `npm run test:regression` en plus des checks syntaxe.
 
 ## Commandes utiles
 
@@ -29,6 +31,7 @@ Fichiers importants :
 - Lancer : `PORT=5013 npm start`
 - Vérifier syntaxe JS serveur : `node --check server.js`
 - Vérifier syntaxe JS front : `node --check public/js/app.js`
+- Tests de régression : `npm test`
 - Tester API locale après lancement :
   - `curl http://127.0.0.1:5013/api/collection`
   - `curl http://127.0.0.1:5013/api/export/missing`
@@ -42,5 +45,6 @@ Pour chaque story :
 3. Lancer au minimum :
    - `node --check server.js`
    - `node --check public/js/app.js`
+   - `npm test`
 4. Tester les routes API concernées avec `curl` si le serveur est lancé.
 5. Ne pas faire de commit automatiquement sans demander.
