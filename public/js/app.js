@@ -637,9 +637,11 @@ function showToast(msg) {
 // ── Export vers presse-papier ──────────────────────────────────────────────
 async function copyExport(type) {
   const label = type === 'missing' ? 'cartes manquantes' : 'doublons';
+  const formatEl = document.getElementById('export-format');
+  const format = formatEl ? formatEl.value : 'grouped';
 
   try {
-    const res = await fetch(`/api/export/${type}`);
+    const res = await fetch(`/api/export/${type}?format=${encodeURIComponent(format)}`);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);
@@ -650,7 +652,7 @@ async function copyExport(type) {
     const ok = await tryCopyText(text);
 
     if (ok) {
-      showToast(`📋 ${label} copiés dans le presse-papier`);
+      showToast(`📋 ${label} copiés (${format})`);
       return;
     }
 

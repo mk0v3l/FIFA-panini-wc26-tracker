@@ -196,8 +196,25 @@ a { text-decoration: none; color: inherit; }
   margin-bottom: 8px;
   padding: 0 4px;
 }
+.export-format-label {
+  display: block;
+  color: var(--text-muted);
+  font-size: 11px;
+  margin: 0 4px 5px;
+}
+.export-format {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  font-size: 12px;
+  margin-bottom: 8px;
+  padding: 8px 10px;
+}
 .export-btn {
   display: block;
+  width: 100%;
   padding: 9px 12px;
   border-radius: var(--radius);
   font-size: 12px;

@@ -41,6 +41,13 @@
     <div class="export-section">
       <div class="export-title">Copier</div>
 
+      <label class="export-format-label" for="export-format">Format</label>
+      <select id="export-format" class="export-format">
+        <option value="compact">Compact</option>
+        <option value="grouped" selected>Par pays</option>
+        <option value="whatsapp">WhatsApp</option>
+      </select>
+
       <button type="button" class="export-btn missing-btn" onclick="copyExport('missing')">
         📋 Cartes manquantes
       </button>

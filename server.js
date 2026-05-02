@@ -348,39 +348,17 @@ app.post('/api/reset/:team', (req, res) => {
 
 app.get('/api/export/:type', (req, res) => {
   const { type } = req.params;
+  const format = req.query.format || 'grouped';
+  if (!['missing', 'doubles'].includes(type)) {
+    return res.status(400).type('text/plain; charset=utf-8').send('Invalid export type');
+  }
+  if (!['compact', 'grouped', 'whatsapp'].includes(format)) {
+    return res.status(400).type('text/plain; charset=utf-8').send('Invalid export format');
+  }
+
   const data = loadData();
-  const sections = [];
-
-  // FWC Special en premier
-  const fwcCards = data['FWC'] || {};
-  const fwcMatching = [];
-  const count00 = fwcCards['00'] ?? 0;
-  if (type === 'missing' && count00 === 0)      fwcMatching.push('00');
-  else if (type === 'doubles' && count00 >= 2)  fwcMatching.push(`00 x${count00 - 1}`);
-  for (let i = 1; i <= 19; i++) {
-    const count = fwcCards[String(i)] ?? 0;
-    if (type === 'missing' && count === 0)      fwcMatching.push(`FWC${i}`);
-    else if (type === 'doubles' && count >= 2)  fwcMatching.push(`FWC${i} x${count - 1}`);
-  }
-  if (fwcMatching.length > 0) sections.push(`[Special]\n${fwcMatching.join(', ')}`);
-
-  // Équipes
-  for (const team of TEAMS) {
-    const cards = data[team.code] || {};
-    const matching = [];
-    for (let i = 1; i <= 20; i++) {
-      const count = cards[String(i)] ?? 0;
-      if (type === 'missing' && count === 0)      matching.push(`${team.code}${i}`);
-      else if (type === 'doubles' && count >= 2)  matching.push(`${team.code}${i} x${count - 1}`);
-    }
-    if (matching.length > 0) sections.push(`[${team.name}]\n${matching.join(', ')}`);
-  }
-
-  const label = type === 'missing' ? 'CARTES MANQUANTES' : 'CARTES EN DOUBLE (exemplaires à échanger)';
-  const date = new Date().toLocaleDateString('fr-FR');
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.setHeader('Content-Disposition', `attachment; filename="${type}_${Date.now()}.txt"`);
-  res.send(`${label} — ${date}\n${'─'.repeat(40)}\n\n${sections.join('\n\n')}`);
+  res.send(buildExportText(data, type, format));
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────
@@ -556,6 +534,62 @@ function compareWithFriend(data, body) {
       youCanGiveCount: youCanGive.length
     }
   };
+}
+
+function collectExportSections(data, type) {
+  const sections = [];
+  const addSection = (title, cards) => {
+    if (cards.length > 0) sections.push({ title, cards });
+  };
+
+  const fwcCards = data.FWC || {};
+  const fwcMatching = [];
+  const count00 = fwcCards['00'] ?? 0;
+  if (type === 'missing' && count00 === 0) fwcMatching.push('00');
+  else if (type === 'doubles' && count00 >= 2) fwcMatching.push(`00 x${count00 - 1}`);
+  for (let i = 1; i <= 19; i++) {
+    const count = fwcCards[String(i)] ?? 0;
+    if (type === 'missing' && count === 0) fwcMatching.push(`FWC${i}`);
+    else if (type === 'doubles' && count >= 2) fwcMatching.push(`FWC${i} x${count - 1}`);
+  }
+  addSection('Special', fwcMatching);
+
+  for (const team of TEAMS) {
+    const cards = data[team.code] || {};
+    const matching = [];
+    for (let i = 1; i <= 20; i++) {
+      const count = cards[String(i)] ?? 0;
+      if (type === 'missing' && count === 0) matching.push(`${team.code}${i}`);
+      else if (type === 'doubles' && count >= 2) matching.push(`${team.code}${i} x${count - 1}`);
+    }
+    addSection(team.name, matching);
+  }
+
+  return sections;
+}
+
+function buildExportText(data, type, format) {
+  const sections = collectExportSections(data, type);
+  const cards = sections.flatMap(section => section.cards);
+  const date = new Date().toLocaleDateString('fr-FR');
+  const title = type === 'missing' ? 'Cartes manquantes' : 'Cartes en double';
+
+  if (format === 'compact') {
+    return cards.length ? cards.join(' ') : `${title}: aucune carte`;
+  }
+
+  if (format === 'whatsapp') {
+    const icon = type === 'missing' ? '📋' : '🔄';
+    const empty = type === 'missing' ? 'Aucune carte manquante.' : 'Aucun doublon disponible.';
+    const body = sections.length
+      ? sections.map(section => `*${section.title}*\n${section.cards.join(' ')}`).join('\n\n')
+      : empty;
+    return `${icon} *${title}* - ${date}\n\n${body}`;
+  }
+
+  const label = type === 'missing' ? 'CARTES MANQUANTES' : 'CARTES EN DOUBLE (exemplaires à échanger)';
+  const body = sections.map(section => `[${section.title}]\n${section.cards.join(', ')}`).join('\n\n');
+  return `${label} — ${date}\n${'-'.repeat(40)}\n\n${body || 'Aucune carte'}`;
 }
 
 // ─── Import ──────────────────────────────────────────────────────────────────
