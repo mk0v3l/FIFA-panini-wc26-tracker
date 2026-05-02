@@ -78,6 +78,18 @@ function snapshotCollection() {
   return fs.readFileSync(path.join(tempRoot, 'data', 'collection.json'), 'utf8');
 }
 
+function snapshotDataFile(name) {
+  const file = path.join(tempRoot, 'data', name);
+  return fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
+}
+
+function writePendingTrades(trades) {
+  fs.writeFileSync(
+    path.join(tempRoot, 'data', 'pending-trades.json'),
+    `${JSON.stringify(trades, null, 2)}\n`
+  );
+}
+
 async function setCount(team, card, desired) {
   let current = (await collection())[team][card] || 0;
   while (current < desired) {
@@ -214,6 +226,80 @@ async function main() {
       }
     }
     assert.strictEqual(snapshotCollection(), before);
+  });
+
+  await test('exports can include pending trade impact without mutating data', async () => {
+    await setCount('BEL', '14', 0);
+    await setCount('FRA', '3', 2);
+    await setCount('ARG', '5', 1);
+
+    writePendingTrades([
+      {
+        id: 'pending-export-active',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: ['FRA3', 'ARG5'],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+
+    let beforeCollection = snapshotCollection();
+    let beforePending = snapshotDataFile('pending-trades.json');
+    let beforeHistory = snapshotDataFile('history.json');
+
+    const missingReal = await request('/api/export/missing?format=compact');
+    const missingWithPending = await request('/api/export/missing?format=compact&includePending=1');
+    assert.match(missingReal.text, /\bBEL14\b/);
+    assert.ok(!/\bBEL14\b/.test(missingWithPending.text));
+    assert.ok(/\bARG5\b/.test(missingWithPending.text));
+
+    const doublesReal = await request('/api/export/doubles?format=compact');
+    const doublesWithPending = await request('/api/export/doubles?format=compact&includePending=1');
+    assert.match(doublesReal.text, /\bFRA3 x1\b/);
+    assert.ok(!/\bFRA3 x1\b/.test(doublesWithPending.text));
+
+    for (const type of ['missing', 'doubles']) {
+      for (const format of ['compact', 'grouped', 'whatsapp']) {
+        const res = await request(`/api/export/${type}?format=${format}&includePending=1`);
+        assert.strictEqual(res.status, 200);
+        assert.match(res.headers.get('content-type') || '', /text\/plain/);
+        assert.ok(res.text.length > 0);
+      }
+    }
+
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+
+    writePendingTrades([
+      {
+        id: 'pending-export-cancelled',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    assert.match((await request('/api/export/missing?format=compact&includePending=1')).text, /\bBEL14\b/);
+
+    writePendingTrades([
+      {
+        id: 'pending-export-completed',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    assert.match((await request('/api/export/missing?format=compact&includePending=1')).text, /\bBEL14\b/);
+
+    writePendingTrades([]);
   });
 
   await test('friend comparison works and does not mutate collection', async () => {

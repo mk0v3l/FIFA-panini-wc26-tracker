@@ -1232,10 +1232,14 @@ function showToast(msg) {
 async function copyExport(type) {
   const label = type === 'missing' ? 'cartes manquantes' : 'doublons';
   const formatEl = document.getElementById('export-format');
+  const includePendingEl = document.getElementById('export-include-pending');
   const format = formatEl ? formatEl.value : 'grouped';
+  const includePending = includePendingEl ? includePendingEl.checked : false;
+  const params = new URLSearchParams({ format });
+  if (includePending) params.set('includePending', '1');
 
   try {
-    const res = await fetch(`/api/export/${type}?format=${encodeURIComponent(format)}`);
+    const res = await fetch(`/api/export/${type}?${params.toString()}`);
 
     if (!res.ok) {
       throw new Error(`HTTP ${res.status}`);

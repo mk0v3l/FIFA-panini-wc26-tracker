@@ -131,6 +131,14 @@
             <option value="whatsapp">WhatsApp</option>
           </select>
 
+          <label class="export-pending-option">
+            <input type="checkbox" id="export-include-pending">
+            <span>Prendre en compte les échanges virtuels</span>
+          </label>
+          <p class="export-pending-note">
+            Les cartes à recevoir virtuellement sont retirées des manquantes, et les cartes réservées virtuellement sont retirées des doublons disponibles.
+          </p>
+
           <div class="page-action-grid">
             <button type="button" class="export-btn missing-btn" onclick="copyExport('missing')">
               📋 Cartes manquantes

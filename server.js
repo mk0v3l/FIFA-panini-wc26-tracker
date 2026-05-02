@@ -782,6 +782,7 @@ app.post('/api/pending-trades/:id/complete', (req, res) => {
 app.get('/api/export/:type', (req, res) => {
   const { type } = req.params;
   const format = req.query.format || 'grouped';
+  const includePending = req.query.includePending === '1' || req.query.includePending === 'true';
   if (!['missing', 'doubles'].includes(type)) {
     return res.status(400).type('text/plain; charset=utf-8').send('Invalid export type');
   }
@@ -790,8 +791,9 @@ app.get('/api/export/:type', (req, res) => {
   }
 
   const data = loadData();
+  const pendingTrades = includePending ? loadPendingTrades() : [];
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
-  res.send(buildExportText(data, type, format));
+  res.send(buildExportText(data, type, format, pendingTrades));
 });
 
 // ─── Start ───────────────────────────────────────────────────────────────────
@@ -985,29 +987,33 @@ function compareWithFriend(data, body, pendingTrades = []) {
   };
 }
 
-function collectExportSections(data, type) {
+function exportCount(data, pendingTrades, team, card) {
+  if (!pendingTrades || pendingTrades.length === 0) return data[team]?.[card] ?? 0;
+  const counts = cardCountsWithPending(data, pendingTrades, team, card);
+  return Math.max(0, counts.effective);
+}
+
+function collectExportSections(data, type, pendingTrades = []) {
   const sections = [];
   const addSection = (title, cards) => {
     if (cards.length > 0) sections.push({ title, cards });
   };
 
-  const fwcCards = data.FWC || {};
   const fwcMatching = [];
-  const count00 = fwcCards['00'] ?? 0;
+  const count00 = exportCount(data, pendingTrades, 'FWC', '00');
   if (type === 'missing' && count00 === 0) fwcMatching.push('00');
   else if (type === 'doubles' && count00 >= 2) fwcMatching.push(`00 x${count00 - 1}`);
   for (let i = 1; i <= 19; i++) {
-    const count = fwcCards[String(i)] ?? 0;
+    const count = exportCount(data, pendingTrades, 'FWC', String(i));
     if (type === 'missing' && count === 0) fwcMatching.push(`FWC${i}`);
     else if (type === 'doubles' && count >= 2) fwcMatching.push(`FWC${i} x${count - 1}`);
   }
   addSection('Special', fwcMatching);
 
   for (const team of TEAMS) {
-    const cards = data[team.code] || {};
     const matching = [];
     for (let i = 1; i <= 20; i++) {
-      const count = cards[String(i)] ?? 0;
+      const count = exportCount(data, pendingTrades, team.code, String(i));
       if (type === 'missing' && count === 0) matching.push(`${team.code}${i}`);
       else if (type === 'doubles' && count >= 2) matching.push(`${team.code}${i} x${count - 1}`);
     }
@@ -1017,8 +1023,8 @@ function collectExportSections(data, type) {
   return sections;
 }
 
-function buildExportText(data, type, format) {
-  const sections = collectExportSections(data, type);
+function buildExportText(data, type, format, pendingTrades = []) {
+  const sections = collectExportSections(data, type, pendingTrades);
   const cards = sections.flatMap(section => section.cards);
   const date = new Date().toLocaleDateString('fr-FR');
   const title = type === 'missing' ? 'Cartes manquantes' : 'Cartes en double';
