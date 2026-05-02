@@ -229,6 +229,32 @@ a { text-decoration: none; color: inherit; }
 .missing-btn { background: #1f4068; color: #58a6ff; border: 1px solid #1f6feb; }
 .doubles-btn { background: #3d2200; color: var(--accent2); border: 1px solid #9e6a03; }
 
+.sidebar-shortcuts {
+  border-top: 1px solid var(--border);
+  display: grid;
+  gap: 8px;
+  padding: 12px;
+  flex-shrink: 0;
+}
+
+.sidebar-shortcut {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 9px 10px;
+  text-align: left;
+}
+
+.sidebar-shortcut:hover,
+.sidebar-shortcut.active {
+  border-color: #58a6ff;
+  color: #58a6ff;
+}
+
 /* History */
 .history-section {
   padding: 12px;
@@ -336,6 +362,67 @@ a { text-decoration: none; color: inherit; }
   font-size: 22px;
   font-weight: 700;
   margin-bottom: 20px;
+}
+
+.page-tool-section {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  max-width: 860px;
+  padding: 16px;
+}
+
+.page-tool-section.export-section,
+.page-tool-section.history-section {
+  border-top: 1px solid var(--border);
+  flex-shrink: 1;
+}
+
+.page-action-grid {
+  display: grid;
+  gap: 10px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.page-action-grid .export-btn {
+  margin-bottom: 0;
+}
+
+.history-page-header {
+  align-items: flex-start;
+  display: flex;
+  gap: 16px;
+  justify-content: space-between;
+  max-width: 860px;
+}
+
+.history-page-header .page-title {
+  margin-bottom: 16px;
+}
+
+#history-page #undo-last-btn {
+  flex-shrink: 0;
+  width: auto;
+}
+
+#history-page .history-list {
+  margin-top: 0;
+}
+
+#history-page .history-empty {
+  font-size: 13px;
+}
+
+#history-page .history-item {
+  padding: 12px;
+}
+
+#history-page .history-item-title {
+  font-size: 13px;
+}
+
+#history-page .history-item-meta {
+  font-size: 12px;
 }
 
 /* Dashboard */
@@ -1059,6 +1146,19 @@ a { text-decoration: none; color: inherit; }
   #content { padding: 16px; }
 
   .page-title { font-size: 18px; margin-bottom: 14px; }
+
+  .history-page-header {
+    flex-direction: column;
+  }
+
+  #history-page #undo-last-btn,
+  .page-action-grid {
+    width: 100%;
+  }
+
+  .page-action-grid {
+    grid-template-columns: 1fr;
+  }
 
   .dashboard-stats {
     grid-template-columns: repeat(2, minmax(0, 1fr));

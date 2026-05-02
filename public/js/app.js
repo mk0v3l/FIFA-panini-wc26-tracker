@@ -4,6 +4,8 @@ let collection = {};
 let historyEntries = [];
 let currentTeam = null;
 const NEARLY_COMPLETE_VIEW = '__nearly_complete__';
+const EXPORT_VIEW = '__export__';
+const HISTORY_VIEW = '__history__';
 
 
 const FRENCH_TEAM_NAMES = {
@@ -377,6 +379,15 @@ function renderNav() {
   }
 }
 
+function updateSidebarShortcuts() {
+  document.querySelectorAll('.sidebar-shortcut').forEach(el => {
+    const isActive =
+      el.dataset.view === 'export' && currentTeam === EXPORT_VIEW ||
+      el.dataset.view === 'history' && currentTeam === HISTORY_VIEW;
+    el.classList.toggle('active', isActive);
+  });
+}
+
 function makeNavItem(team) {
   const p = teamProgress(team.code);
   const progress = pct(p.owned, p.total);
@@ -425,13 +436,20 @@ function updateGlobalProgress() {
 
 function refreshCollectionViews() {
   renderNav();
+  updateSidebarShortcuts();
   renderOverview();
   renderNearlyCompletePage();
   updateGlobalProgress();
   if (currentTeam === NEARLY_COMPLETE_VIEW) {
     document.getElementById('mobile-title').textContent = 'Pays presque terminés';
+  } else if (currentTeam === EXPORT_VIEW) {
+    document.getElementById('mobile-title').textContent = 'Export';
+  } else if (currentTeam === HISTORY_VIEW) {
+    document.getElementById('mobile-title').textContent = 'Historique';
   }
-  if (currentTeam && currentTeam !== NEARLY_COMPLETE_VIEW) renderTeamPage(currentTeam);
+  if (currentTeam && ![NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW].includes(currentTeam)) {
+    renderTeamPage(currentTeam);
+  }
 }
 
 async function refreshHistory() {
@@ -712,7 +730,7 @@ function getAdjacentTeamCode(code, delta) {
 }
 
 function navigateAdjacentTeam(delta) {
-  if (!currentTeam || currentTeam === NEARLY_COMPLETE_VIEW) return;
+  if (!currentTeam || [NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW].includes(currentTeam)) return;
 
   const nextCode = getAdjacentTeamCode(currentTeam, delta);
   if (!nextCode) return;
@@ -909,6 +927,7 @@ function navigateTo(code) {
   currentTeam = code;
 
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  updateSidebarShortcuts();
   if (code === null) {
     document.querySelector('.nav-item:first-child')?.classList.add('active');
   } else {
@@ -917,15 +936,21 @@ function navigateTo(code) {
 
   const ovPage     = document.getElementById('overview-page');
   const nearlyPage = document.getElementById('nearly-page');
+  const exportPage = document.getElementById('export-page');
+  const historyPage = document.getElementById('history-page');
   const teamPage   = document.getElementById('team-page');
 
   if (code === null) {
     ovPage.classList.add('active');
     nearlyPage.classList.remove('active');
+    exportPage.classList.remove('active');
+    historyPage.classList.remove('active');
     teamPage.classList.remove('active');
   } else {
     ovPage.classList.remove('active');
     nearlyPage.classList.remove('active');
+    exportPage.classList.remove('active');
+    historyPage.classList.remove('active');
     teamPage.classList.add('active');
     renderTeamPage(code);
   }
@@ -938,12 +963,46 @@ function navigateToNearlyComplete() {
 
   document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
   renderNav();
+  updateSidebarShortcuts();
 
   document.getElementById('overview-page').classList.remove('active');
   document.getElementById('team-page').classList.remove('active');
+  document.getElementById('export-page').classList.remove('active');
+  document.getElementById('history-page').classList.remove('active');
   document.getElementById('nearly-page').classList.add('active');
   document.getElementById('mobile-title').textContent = 'Pays presque terminés';
   renderNearlyCompletePage();
+  closeSidebar();
+}
+
+function navigateToExport() {
+  currentTeam = EXPORT_VIEW;
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  updateSidebarShortcuts();
+
+  document.getElementById('overview-page').classList.remove('active');
+  document.getElementById('team-page').classList.remove('active');
+  document.getElementById('nearly-page').classList.remove('active');
+  document.getElementById('history-page').classList.remove('active');
+  document.getElementById('export-page').classList.add('active');
+  document.getElementById('mobile-title').textContent = 'Export';
+  closeSidebar();
+}
+
+function navigateToHistory() {
+  currentTeam = HISTORY_VIEW;
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  updateSidebarShortcuts();
+
+  document.getElementById('overview-page').classList.remove('active');
+  document.getElementById('team-page').classList.remove('active');
+  document.getElementById('nearly-page').classList.remove('active');
+  document.getElementById('export-page').classList.remove('active');
+  document.getElementById('history-page').classList.add('active');
+  document.getElementById('mobile-title').textContent = 'Historique';
+  renderHistory();
   closeSidebar();
 }
 
