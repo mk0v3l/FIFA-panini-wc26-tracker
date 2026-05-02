@@ -744,6 +744,34 @@ function formatPendingDate(value) {
   return formatHistoryDate(value);
 }
 
+function pendingTradeAvailabilityStatus(trade) {
+  if (trade.status !== 'pending') return trade.status;
+  return trade.availability?.status || 'ready';
+}
+
+function renderPendingAvailability(trade) {
+  const availability = trade.availability;
+  if (!availability || trade.status !== 'pending') return '';
+
+  if (availability.status === 'ready') {
+    return '<div class="pending-availability ready">Prêt à confirmer physiquement</div>';
+  }
+
+  const dependent = availability.dependentCards || [];
+  const unavailable = availability.unavailableCards || [];
+  const details = [
+    ...dependent.map(code => `${escapeHtml(code)} dépend d’un échange virtuel précédent`),
+    ...unavailable.map(code => `${escapeHtml(code)} indisponible`)
+  ];
+  const detailHtml = details.length
+    ? `<div class="pending-blocking-list">${details.map(text => `<span>${text}</span>`).join('')}</div>`
+    : '';
+  const label = availability.status === 'dependent'
+    ? 'Dépendant : en attente d’un autre échange'
+    : 'Bloqué actuellement';
+  return `<div class="pending-availability ${availability.status}">${label}${detailHtml}</div>`;
+}
+
 function renderPendingTrades() {
   const list = document.getElementById('pending-trades-list');
   if (!list) return;
@@ -755,13 +783,17 @@ function renderPendingTrades() {
 
   list.innerHTML = pendingTrades.slice().reverse().map(trade => {
     const pending = trade.status === 'pending';
-    return `<article class="pending-trade-card status-${trade.status}">
+    const availabilityStatus = pendingTradeAvailabilityStatus(trade);
+    return `<article class="pending-trade-card status-${trade.status} availability-${availabilityStatus}">
       <div class="pending-trade-header">
         <div>
           <div class="pending-trade-title">Échange virtuel</div>
           <div class="pending-trade-date">${formatPendingDate(trade.createdAt)}</div>
         </div>
-        <span class="pending-status">${trade.status}</span>
+        <div class="pending-status-group">
+          <span class="pending-status">${trade.status}</span>
+          ${pending ? `<span class="pending-status availability">${availabilityStatus === 'ready' ? 'prêt' : availabilityStatus === 'dependent' ? 'dépendant' : 'bloqué'}</span>` : ''}
+        </div>
       </div>
       <div class="pending-trade-cols">
         <div>
@@ -773,6 +805,7 @@ function renderPendingTrades() {
           <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
         </div>
       </div>
+      ${renderPendingAvailability(trade)}
       <div class="pending-note-block" id="pending-note-${trade.id}">
         ${renderPendingTradeNote(trade)}
       </div>
@@ -2047,7 +2080,11 @@ async function doPendingTrade() {
     await refreshPendingTrades();
     await refreshHistory();
     refreshCollectionViews();
-    showToast('Échange virtuel enregistré');
+    if (res.trade?.availability?.status === 'dependent') {
+      showToast('Échange virtuel enregistré avec dépendance');
+    } else {
+      showToast('Échange virtuel enregistré');
+    }
     closeModal();
   } finally {
     btn.disabled = false;

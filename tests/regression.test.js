@@ -667,6 +667,112 @@ async function main() {
     writePendingTrades([]);
   });
 
+  await test('dependent pending trades can be saved and are blocked until real availability', async () => {
+    await setCount('RSA', '15', 1);
+    const before = snapshotCollection();
+    const parent = await post('/api/pending-trades', { received: ['RSA15'], given: [] });
+    assert.strictEqual(parent.status, 200);
+    const child = await post('/api/pending-trades', { received: [], given: ['RSA15'], allowUniqueGiven: false });
+    assert.strictEqual(child.status, 200);
+    assert.strictEqual(snapshotCollection(), before);
+    assert.strictEqual(child.body.trade.availability.status, 'dependent');
+    assert.ok(child.body.trade.availability.dependentCards.includes('RSA15'));
+
+    const blocked = await post(`/api/pending-trades/${child.body.trade.id}/complete`);
+    assert.strictEqual(blocked.status, 409);
+    assert.match(blocked.body.error, /RSA15/);
+    assert.match(blocked.body.error, /dépend/);
+    assert.strictEqual(snapshotCollection(), before);
+    assert.strictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === child.body.trade.id).status, 'pending');
+
+    await patch('/api/card', { team: 'RSA', card: '15', delta: 1, source: 'regression' });
+    const complete = await post(`/api/pending-trades/${child.body.trade.id}/complete`);
+    assert.strictEqual(complete.status, 200);
+    assert.strictEqual(complete.body.trade.status, 'completed');
+    assert.ok((await collection()).RSA['15'] >= 1);
+
+    writePendingTrades([]);
+  });
+
+  await test('dependent pending trade can complete after parent trade completes', async () => {
+    await setCount('RSA', '15', 1);
+    writePendingTrades([]);
+    const parent = await post('/api/pending-trades', { received: ['RSA15'], given: [] });
+    assert.strictEqual(parent.status, 200);
+    const child = await post('/api/pending-trades', { received: [], given: ['RSA15'], allowUniqueGiven: false });
+    assert.strictEqual(child.status, 200);
+    assert.strictEqual(child.body.trade.availability.status, 'dependent');
+
+    const completeParent = await post(`/api/pending-trades/${parent.body.trade.id}/complete`);
+    assert.strictEqual(completeParent.status, 200);
+    const completeChild = await post(`/api/pending-trades/${child.body.trade.id}/complete`);
+    assert.strictEqual(completeChild.status, 200);
+    const trades = (await request('/api/pending-trades')).body;
+    assert.strictEqual(trades.find(trade => trade.id === parent.body.trade.id).status, 'completed');
+    assert.strictEqual(trades.find(trade => trade.id === child.body.trade.id).status, 'completed');
+    assert.strictEqual((await post(`/api/pending-trades/${child.body.trade.id}/complete`)).status, 400);
+
+    writePendingTrades([]);
+  });
+
+  await test('pending availability distinguishes ready impossible and self reservations', async () => {
+    await setCount('RSA', '14', 2);
+    await setCount('RSA', '20', 0);
+    writePendingTrades([]);
+
+    const ready = await post('/api/pending-trades', { received: [], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(ready.status, 200);
+    assert.strictEqual(ready.body.trade.availability.status, 'ready');
+    const readyFromList = (await request('/api/pending-trades')).body.find(trade => trade.id === ready.body.trade.id);
+    assert.strictEqual(readyFromList.availability.status, 'ready');
+    assert.strictEqual(readyFromList.availability.canCompleteNow, true);
+    assert.strictEqual((await post(`/api/pending-trades/${ready.body.trade.id}/complete`)).status, 200);
+
+    const beforePending = snapshotDataFile('pending-trades.json');
+    const beforeCollection = snapshotCollection();
+    const impossible = await post('/api/pending-trades', { received: [], given: ['RSA20'], allowUniqueGiven: false });
+    assert.strictEqual(impossible.status, 400);
+    assert.match(impossible.body.error, /invalid or unavailable|No valid/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+
+    writePendingTrades([]);
+  });
+
+  await test('compare-to-trade potential gives can be saved as dependent virtual trade', async () => {
+    await setCount('RSA', '15', 1);
+    writePendingTrades([]);
+    const parent = await post('/api/pending-trades', { received: ['RSA15'], given: [] });
+    assert.strictEqual(parent.status, 200);
+    const compare = await post('/api/compare', { friendDoubles: '', friendMissing: 'RSA15' });
+    assert.strictEqual(compare.status, 200);
+    assert.ok(compare.body.youCanPotentiallyGive.includes('RSA15'));
+    assert.ok(compare.body.proposedTrade.given.includes('RSA15'));
+    const before = snapshotCollection();
+    const child = await post('/api/pending-trades', {
+      received: compare.body.proposedTrade.received,
+      given: compare.body.proposedTrade.given,
+      allowUniqueGiven: false
+    });
+    assert.strictEqual(child.status, 200);
+    assert.strictEqual(child.body.trade.availability.status, 'dependent');
+    assert.ok(child.body.trade.availability.dependentCards.includes('RSA15'));
+    assert.strictEqual(snapshotCollection(), before);
+
+    writePendingTrades([]);
+  });
+
+  await test('modal tabs keep compare trade import order', async () => {
+    const html = fs.readFileSync(path.join(repoRoot, 'public/index.html'), 'utf8');
+    const compareIndex = html.indexOf('data-tab="compare"');
+    const tradeIndex = html.indexOf('data-tab="trade"');
+    const importIndex = html.indexOf('data-tab="import"');
+    assert.ok(compareIndex !== -1 && tradeIndex !== -1 && importIndex !== -1);
+    assert.ok(compareIndex < tradeIndex);
+    assert.ok(tradeIndex < importIndex);
+    assert.ok(html.includes('class="modal-tab active" data-tab="compare"'));
+  });
+
   await test('friend comparison works and does not mutate collection', async () => {
     await setCount('ESP', '4', 0);
     await setCount('FRA', '3', 2);

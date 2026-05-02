@@ -462,7 +462,7 @@ function cardKeyFromCode(code) {
   return parsed ? `${parsed.team}:${parsed.card}` : null;
 }
 
-function pendingImpact(pendingTrades) {
+function pendingImpact(pendingTrades, excludeTradeId = null) {
   const incoming = new Map();
   const outgoing = new Map();
   const add = (map, code) => {
@@ -473,6 +473,7 @@ function pendingImpact(pendingTrades) {
 
   for (const trade of pendingTrades) {
     if (trade.status !== 'pending') continue;
+    if (excludeTradeId && trade.id === excludeTradeId) continue;
     for (const code of trade.received || []) add(incoming, code);
     for (const code of trade.given || []) add(outgoing, code);
   }
@@ -538,32 +539,99 @@ function collectionCodeSetWithPending(data, pendingTrades, predicate) {
   return new Map(cards.sort((a, b) => a.sort - b.sort).map(card => [card.key, card]));
 }
 
+function analyzeTradeAvailability(data, pendingTrades, givenCodes, options = {}) {
+  const { allowUniqueGiven = false, excludeTradeId = null } = options;
+  const impact = pendingImpact(pendingTrades, excludeTradeId);
+  const usedInTrade = new Map();
+  const cards = [];
+  const dependentCards = [];
+  const unavailableCards = [];
+  const readyCards = [];
+
+  for (const code of givenCodes) {
+    const parsed = parseCardCode(code);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      unavailableCards.push({ code, blockingReason: 'invalid_card' });
+      continue;
+    }
+
+    const key = `${parsed.team}:${parsed.card}`;
+    const used = usedInTrade.get(key) || 0;
+    usedInTrade.set(key, used + 1);
+    const realQty = data[parsed.team][parsed.card] || 0;
+    const reservedOutgoingPending = pendingCount(impact.outgoing, parsed.team, parsed.card);
+    const incomingPending = pendingCount(impact.incoming, parsed.team, parsed.card);
+    const keepRealCopies = allowUniqueGiven ? 0 : 1;
+    const availableNowCopies = Math.max(0, realQty - reservedOutgoingPending - used - keepRealCopies);
+    const availablePotentialCopies = Math.max(0, realQty + incomingPending - reservedOutgoingPending - used - keepRealCopies);
+    const availableNow = availableNowCopies > 0;
+    const availablePotentially = availablePotentialCopies > 0;
+    const dependsOnPending = !availableNow && availablePotentially && incomingPending > 0;
+    const blockingReason = availableNow
+      ? ''
+      : dependsOnPending
+        ? 'depends_on_pending'
+        : allowUniqueGiven
+          ? 'not_available'
+          : 'no_duplicate_available';
+    const card = {
+      code: cardCode(parsed.team, parsed.card),
+      team: parsed.team,
+      card: parsed.card,
+      realQty,
+      reservedOutgoingPending,
+      incomingPending,
+      availableNow,
+      availablePotentially,
+      dependsOnPending,
+      blockingReason
+    };
+    cards.push(card);
+    if (availableNow) readyCards.push(card);
+    else if (dependsOnPending) dependentCards.push(card);
+    else unavailableCards.push(card);
+  }
+
+  return {
+    cards,
+    readyCards: readyCards.map(card => card.code),
+    dependentCards: dependentCards.map(card => card.code),
+    unavailableCards: unavailableCards.map(card => card.code),
+    canSaveAsVirtual: unavailableCards.length === 0,
+    canCompleteNow: dependentCards.length === 0 && unavailableCards.length === 0,
+    status: unavailableCards.length ? 'blocked' : dependentCards.length ? 'dependent' : 'ready'
+  };
+}
+
+function enrichPendingTrade(data, pendingTrades, trade) {
+  const availability = analyzeTradeAvailability(data, pendingTrades, trade.given || [], {
+    allowUniqueGiven: Boolean(trade.allowUniqueGiven),
+    excludeTradeId: trade.id
+  });
+  return { ...trade, availability };
+}
+
 function validatePendingTrade(data, pendingTrades, body) {
   const { received = [], given = [], allowUniqueGiven = false, note = '' } = body || {};
   const receivedCards = normalizeTradeCards(data, received);
   const givenCards = normalizeTradeCards(data, given);
+  const availability = analyzeTradeAvailability(data, pendingTrades, givenCards.ok, { allowUniqueGiven });
   const results = {
     received: { ok: receivedCards.ok, unknown: receivedCards.unknown },
-    given: { ok: [], unknown: givenCards.unknown, refused: [], uniqueBlocked: [], reserved: [] },
+    given: { ok: [], unknown: givenCards.unknown, refused: [], uniqueBlocked: [], reserved: [], dependent: [] },
     note: String(note || '').slice(0, 500),
-    allowUniqueGiven: Boolean(allowUniqueGiven)
+    allowUniqueGiven: Boolean(allowUniqueGiven),
+    availability
   };
 
-  for (const code of givenCards.ok) {
-    const parsed = parseCardCode(code);
-    const counts = cardCountsWithPending(data, pendingTrades, parsed.team, parsed.card);
-    if (counts.tradeable <= 0) {
-      results.given.refused.push(code);
-      continue;
+  for (const card of availability.cards) {
+    if (card.availableNow || card.dependsOnPending) results.given.ok.push(card.code);
+    if (card.dependsOnPending) results.given.dependent.push(card.code);
+    if (card.reservedOutgoingPending > 0) results.given.reserved.push(card.code);
+    if (!card.availablePotentially) {
+      if (card.blockingReason === 'no_duplicate_available') results.given.uniqueBlocked.push(card.code);
+      else results.given.refused.push(card.code);
     }
-    if (counts.real > 0 && counts.outgoing > 0) {
-      results.given.reserved.push(code);
-    }
-    if (counts.tradeable <= 1 && !allowUniqueGiven) {
-      results.given.uniqueBlocked.push(code);
-      continue;
-    }
-    results.given.ok.push(code);
   }
 
   return results;
@@ -692,7 +760,9 @@ app.post('/api/reset/:team', (req, res) => {
 });
 
 app.get('/api/pending-trades', (_req, res) => {
-  res.json(loadPendingTrades());
+  const data = loadData();
+  const trades = loadPendingTrades();
+  res.json(trades.map(trade => enrichPendingTrade(data, trades, trade)));
 });
 
 app.post('/api/pending-trades', (req, res) => {
@@ -713,6 +783,7 @@ app.post('/api/pending-trades', (req, res) => {
   const trade = createPendingTrade(results);
   trades.push(trade);
   savePendingTrades(trades);
+  const enrichedTrade = enrichPendingTrade(data, trades, trade);
 
   const entry = buildHistoryEntry('pending_trade_create', {
     source: 'trade_modal',
@@ -724,10 +795,11 @@ app.post('/api/pending-trades', (req, res) => {
   });
   appendHistoryEntry(entry);
 
-  res.json({ ok: true, trade, results, historyId: entry.id });
+  res.json({ ok: true, trade: enrichedTrade, results, historyId: entry.id });
 });
 
 app.post('/api/pending-trades/:id/cancel', (req, res) => {
+  const data = loadData();
   const trades = loadPendingTrades();
   const index = trades.findIndex(trade => trade.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Pending trade not found' });
@@ -747,10 +819,11 @@ app.post('/api/pending-trades/:id/cancel', (req, res) => {
   });
   appendHistoryEntry(entry);
 
-  res.json({ ok: true, trade: trades[index], historyId: entry.id });
+  res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]), historyId: entry.id });
 });
 
 app.patch('/api/pending-trades/:id/note', (req, res) => {
+  const data = loadData();
   const trades = loadPendingTrades();
   const index = trades.findIndex(trade => trade.id === req.params.id);
   if (index === -1) return res.status(404).json({ error: 'Pending trade not found' });
@@ -766,7 +839,7 @@ app.patch('/api/pending-trades/:id/note', (req, res) => {
   const note = rawNote.trim();
   trades[index] = { ...trades[index], note };
   savePendingTrades(trades);
-  res.json({ ok: true, trade: trades[index] });
+  res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]) });
 });
 
 app.post('/api/pending-trades/:id/complete', (req, res) => {
@@ -783,6 +856,18 @@ app.post('/api/pending-trades/:id/complete', (req, res) => {
     given: trade.given,
     allowUniqueGiven: trade.allowUniqueGiven
   };
+  const availability = analyzeTradeAvailability(data, trades, trade.given || [], {
+    allowUniqueGiven: Boolean(trade.allowUniqueGiven),
+    excludeTradeId: trade.id
+  });
+  if (!availability.canCompleteNow) {
+    const blocked = availability.dependentCards[0] || availability.unavailableCards[0] || 'carte';
+    const error = availability.dependentCards.length
+      ? `Impossible de confirmer cet échange : ${blocked} dépend encore d’un échange virtuel non confirmé.`
+      : `Impossible de confirmer cet échange : ${blocked} n’est pas disponible réellement.`;
+    return res.status(409).json({ error, availability });
+  }
+
   const preview = processTrade(cloneData(data), payload);
   if (
     preview.received.unknown.length ||
@@ -797,6 +882,7 @@ app.post('/api/pending-trades/:id/complete', (req, res) => {
   saveData(data);
   trades[index] = { ...trade, status: 'completed', completedAt: new Date().toISOString() };
   savePendingTrades(trades);
+  const enrichedTrade = enrichPendingTrade(data, trades, trades[index]);
 
   const entry = appendCollectionHistory('trade', {
     source: 'pending_trade_complete',
@@ -808,7 +894,7 @@ app.post('/api/pending-trades/:id/complete', (req, res) => {
     deltas: results.deltas
   });
 
-  res.json({ ok: true, trade: trades[index], results, historyId: entry?.id });
+  res.json({ ok: true, trade: enrichedTrade, results, historyId: entry?.id });
 });
 
 app.get('/api/export/:type', (req, res) => {

@@ -478,6 +478,16 @@ a { text-decoration: none; color: inherit; }
   opacity: 0.72;
 }
 
+.pending-trade-card.availability-dependent {
+  border-color: #9e6a03;
+  box-shadow: inset 3px 0 0 #9e6a03;
+}
+
+.pending-trade-card.availability-blocked {
+  border-color: #da3633;
+  box-shadow: inset 3px 0 0 #da3633;
+}
+
 .pending-trade-header,
 .pending-actions {
   align-items: center;
@@ -562,6 +572,67 @@ a { text-decoration: none; color: inherit; }
   font-size: 12px;
   font-weight: 700;
   padding: 4px 8px;
+}
+
+.pending-status-group {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.pending-status.availability {
+  color: var(--text);
+}
+
+.availability-dependent .pending-status.availability {
+  background: #3d2200;
+  border-color: #9e6a03;
+  color: var(--accent2);
+}
+
+.availability-ready .pending-status.availability {
+  background: #1a2f1a;
+  border-color: #238636;
+  color: #56d364;
+}
+
+.availability-blocked .pending-status.availability {
+  background: rgba(248, 81, 73, 0.12);
+  border-color: #da3633;
+  color: #f85149;
+}
+
+.pending-availability {
+  border-radius: var(--radius);
+  font-size: 12px;
+  line-height: 1.45;
+  margin-top: 12px;
+  padding: 8px 10px;
+}
+
+.pending-availability.ready {
+  background: rgba(35, 134, 54, 0.12);
+  color: #56d364;
+}
+
+.pending-availability.dependent {
+  background: rgba(158, 106, 3, 0.14);
+  color: var(--accent2);
+}
+
+.pending-availability.blocked {
+  background: rgba(248, 81, 73, 0.12);
+  color: #f85149;
+}
+
+.pending-blocking-list {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  margin-top: 5px;
+  overflow-wrap: anywhere;
 }
 
 .pending-trade-cols {
