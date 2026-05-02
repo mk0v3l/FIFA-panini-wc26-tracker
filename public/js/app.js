@@ -153,6 +153,133 @@ function progressColor(p) {
   return '#484f58';
 }
 
+// ── Quick card search ──────────────────────────────────────────────────────
+function getTeamMeta(code) {
+  if (code === 'FWC') {
+    return { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' };
+  }
+  return TEAMS.find(team => team.code === code) || null;
+}
+
+function normalizeCardCode(raw) {
+  return String(raw || '')
+    .trim()
+    .toUpperCase()
+    .replace(/[\s_-]+/g, '')
+    .replace(/^FCW/, 'FWC');
+}
+
+function parseCardCode(raw) {
+  const s = normalizeCardCode(raw);
+  if (!s) return null;
+  if (s === '00') return { team: 'FWC', card: '00', code: '00' };
+  if (s.startsWith('FWC')) {
+    if (s === 'FWC00') return { team: 'FWC', card: '00', code: '00' };
+    const match = s.match(/^FWC0*(\d+)$/);
+    if (!match) return null;
+    const n = parseInt(match[1], 10);
+    if (n >= 1 && n <= 19) return { team: 'FWC', card: String(n), code: `FWC${n}` };
+    return null;
+  }
+
+  const teamCodes = TEAMS.map(team => team.code).sort((a, b) => b.length - a.length);
+  for (const code of teamCodes) {
+    if (!s.startsWith(code)) continue;
+    const match = s.slice(code.length).match(/^0*(\d+)$/);
+    if (!match) return null;
+    const n = parseInt(match[1], 10);
+    if (n >= 1 && n <= 20) {
+      return { team: code, card: String(n), code: `${code}${n}` };
+    }
+  }
+  return null;
+}
+
+function cardStatus(count) {
+  if (count <= 0) return { label: 'Manquante', cls: 'missing' };
+  if (count === 1) return { label: 'Possédée', cls: 'owned' };
+  return { label: 'Doublon', cls: 'double' };
+}
+
+function findRenderedCard(teamCode, cardKey) {
+  return document.querySelector(`.sticker-card[data-team="${teamCode}"][data-card="${cardKey}"]`);
+}
+
+function renderQuickCardSearch() {
+  const input = document.getElementById('quick-card-search');
+  const result = document.getElementById('quick-card-result');
+  if (!input || !result) return;
+
+  const raw = input.value;
+  if (!raw.trim()) {
+    result.className = 'quick-card-result empty';
+    result.textContent = 'Saisissez un code carte.';
+    return;
+  }
+
+  const parsed = parseCardCode(raw);
+  if (!parsed || !collection[parsed.team] || !(parsed.card in collection[parsed.team])) {
+    result.className = 'quick-card-result invalid';
+    result.textContent = 'Code carte invalide.';
+    return;
+  }
+
+  const team = getTeamMeta(parsed.team);
+  const count = collection[parsed.team][parsed.card] ?? 0;
+  const status = cardStatus(count);
+  const sectionLabel = parsed.team === 'FWC'
+    ? 'Section spéciale'
+    : `Pays ${team.name}`;
+
+  result.className = 'quick-card-result';
+  result.innerHTML = `
+    <div class="quick-card-main">
+      <div>
+        <div class="quick-card-code">${parsed.code}</div>
+        <div class="quick-card-team">${sectionLabel}</div>
+      </div>
+      <span class="quick-card-status ${status.cls}">${status.label}</span>
+    </div>
+    <div class="quick-card-meta">
+      Quantité actuelle : <strong>${count}</strong>
+    </div>
+    <div class="quick-card-actions">
+      <button type="button" class="quick-card-btn add" onclick="adjustQuickCard(1)">+1</button>
+      <button type="button" class="quick-card-btn remove" onclick="adjustQuickCard(-1)" ${count <= 0 ? 'disabled' : ''}>-1</button>
+      <button type="button" class="quick-card-btn goto" onclick="goToQuickCard()">Aller à la page du pays</button>
+    </div>`;
+}
+
+function handleQuickCardSearch() {
+  renderQuickCardSearch();
+}
+
+function getQuickSearchCard() {
+  const input = document.getElementById('quick-card-search');
+  if (!input) return null;
+  const parsed = parseCardCode(input.value);
+  if (!parsed || !collection[parsed.team] || !(parsed.card in collection[parsed.team])) return null;
+  return parsed;
+}
+
+function goToQuickCard() {
+  const parsed = getQuickSearchCard();
+  if (!parsed) {
+    renderQuickCardSearch();
+    return;
+  }
+  navigateTo(parsed.team);
+}
+
+async function adjustQuickCard(delta) {
+  const parsed = getQuickSearchCard();
+  if (!parsed) {
+    renderQuickCardSearch();
+    return;
+  }
+  await applyCardDelta(parsed.team, parsed.card, delta, findRenderedCard(parsed.team, parsed.card));
+}
+
 // ── Sidebar rendering ──────────────────────────────────────────────────────
 function renderNav() {
   const nav = document.getElementById('team-nav');
@@ -327,6 +454,7 @@ function renderOverview() {
   document.getElementById('mobile-title').textContent = 'Vue d\'ensemble';
   const grid = document.getElementById('overview-grid');
   grid.innerHTML = '';
+  renderQuickCardSearch();
 
   const allTeams = [...TEAMS, { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' }];
 
@@ -522,16 +650,22 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null) {
 }
 
 async function handleCardAction(teamCode, cardKey, delta, el) {
+  await applyCardDelta(teamCode, cardKey, delta, el);
+}
+
+async function applyCardDelta(teamCode, cardKey, delta, el = null) {
   const current = collection[teamCode][cardKey] ?? 0;
   const next = Math.max(0, current + delta);
   if (next === current) return;
 
   collection[teamCode][cardKey] = next;
-  updateCardEl(el, teamCode, cardKey, next);
+  const cardEl = el || findRenderedCard(teamCode, cardKey);
+  if (cardEl) updateCardEl(cardEl, teamCode, cardKey, next);
   updateTeamStats(teamCode);
   updateNavItem(teamCode);
   updateOverviewCard(teamCode);
   updateGlobalProgress();
+  renderQuickCardSearch();
 
   if (delta > 0) {
     const msgs = next === 1 ? '✅ Collée !' : `📦 Double x${next - 1}`;
@@ -544,7 +678,12 @@ async function handleCardAction(teamCode, cardKey, delta, el) {
   patchCard(teamCode, cardKey, delta).catch(() => {
     // Rollback on error
     collection[teamCode][cardKey] = current;
-    updateCardEl(el, teamCode, cardKey, current);
+    if (cardEl) updateCardEl(cardEl, teamCode, cardKey, current);
+    updateTeamStats(teamCode);
+    updateNavItem(teamCode);
+    updateOverviewCard(teamCode);
+    updateGlobalProgress();
+    renderQuickCardSearch();
     showToast('⚠️ Erreur de sauvegarde');
   });
 }
@@ -609,6 +748,7 @@ async function confirmReset(code) {
   updateNavItem(code);
   updateOverviewCard(code);
   updateGlobalProgress();
+  renderQuickCardSearch();
   showToast('🗑 Équipe réinitialisée');
 }
 
@@ -1045,6 +1185,7 @@ async function doImport() {
     // Refresh local collection
     collection = await api('/api/collection');
     refreshCollectionViews();
+    renderQuickCardSearch();
     await refreshHistory();
 
     renderResult('import-result', [
@@ -1178,6 +1319,7 @@ async function doTrade() {
 
     collection = await api('/api/collection');
     refreshCollectionViews();
+    renderQuickCardSearch();
     await refreshHistory();
 
     const rows = [];
@@ -1256,6 +1398,7 @@ async function undoLastAction() {
 
     collection = await api('/api/collection');
     refreshCollectionViews();
+    renderQuickCardSearch();
     await refreshHistory();
     showToast('Dernière action annulée');
   } catch (err) {

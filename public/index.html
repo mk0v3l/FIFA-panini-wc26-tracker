@@ -79,6 +79,22 @@
     <div id="content">
       <div id="overview-page" class="page active">
         <h1 class="page-title">Vue d'ensemble</h1>
+        <section class="quick-search" aria-label="Recherche rapide d'une carte">
+          <label class="quick-search-label" for="quick-card-search">Recherche rapide</label>
+          <div class="quick-search-row">
+            <input
+              id="quick-card-search"
+              type="search"
+              placeholder="BEL14, FWC3, FRA12..."
+              autocomplete="off"
+              inputmode="text"
+              oninput="handleQuickCardSearch()"
+            />
+          </div>
+          <div id="quick-card-result" class="quick-card-result empty">
+            Saisissez un code carte.
+          </div>
+        </section>
         <div id="overview-grid"></div>
       </div>
       <div id="team-page" class="page">
