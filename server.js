@@ -489,12 +489,19 @@ function cardCountsWithPending(data, pendingTrades, team, card) {
   const real = data[team]?.[card] || 0;
   const incoming = pendingCount(impact.incoming, team, card);
   const outgoing = pendingCount(impact.outgoing, team, card);
+  const effective = Math.max(0, real + incoming - outgoing);
   return {
     real,
     incoming,
     outgoing,
-    effective: Math.max(0, real + incoming - outgoing),
-    tradeable: Math.max(0, real - outgoing)
+    effective,
+    tradeable: Math.max(0, real - outgoing),
+    realOwned: real > 0,
+    realDouble: real > 1,
+    potentialOwned: effective > 0,
+    doublePotential: real <= 1 && effective > 1,
+    incomingPending: incoming > 0,
+    outgoingPending: outgoing > 0
   };
 }
 

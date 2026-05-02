@@ -1306,6 +1306,18 @@ a { text-decoration: none; color: inherit; }
   box-shadow: 0 0 0 2px rgba(240, 136, 62, 0.35), 0 2px 8px rgba(137, 87, 229, 0.22);
 }
 
+.sticker-card.potential-duplicate {
+  border-color: #d2a8ff;
+  background: linear-gradient(145deg, #142617, #2c2549);
+  color: #d2a8ff;
+  box-shadow: 0 0 0 2px rgba(137, 87, 229, 0.34), 0 2px 10px rgba(137, 87, 229, 0.24);
+}
+
+.sticker-card.state-2.potential-duplicate {
+  background: linear-gradient(145deg, #2d1500, #4a2500);
+  color: var(--accent2);
+}
+
 .sticker-card:active {
   transform: scale(0.93);
 }
@@ -1359,6 +1371,12 @@ a { text-decoration: none; color: inherit; }
 .card-pending-badge.outgoing {
   bottom: 3px;
   background: #9e6a03;
+  color: #fff;
+}
+
+.card-pending-badge.potential-double {
+  top: 18px;
+  background: #6e40c9;
   color: #fff;
 }
 

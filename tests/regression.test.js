@@ -396,6 +396,86 @@ async function main() {
     writePendingTrades([]);
   });
 
+  await test('effective collection exposes potential duplicate card states', async () => {
+    await setCount('BEL', '14', 1);
+    await setCount('FRA', '3', 2);
+    await setCount('ARG', '5', 1);
+    await setCount('BEL', '20', 0);
+
+    writePendingTrades([
+      {
+        id: 'visual-potential-double',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14', 'BEL20'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    let effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].real, 1);
+    assert.strictEqual(effective.BEL['14'].incoming, 1);
+    assert.strictEqual(effective.BEL['14'].effective, 2);
+    assert.strictEqual(effective.BEL['14'].doublePotential, true);
+    assert.strictEqual(effective.FRA['3'].realDouble, true);
+    assert.strictEqual(effective.FRA['3'].doublePotential, false);
+    assert.strictEqual(effective.ARG['5'].realOwned, true);
+    assert.strictEqual(effective.ARG['5'].realDouble, false);
+    assert.strictEqual(effective.ARG['5'].doublePotential, false);
+    assert.strictEqual(effective.BEL['20'].incomingPending, true);
+    assert.strictEqual(effective.BEL['20'].realOwned, false);
+    assert.strictEqual(effective.BEL['20'].potentialOwned, true);
+
+    writePendingTrades([
+      {
+        id: 'visual-potential-cancelled-out',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: ['BEL14'],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].effective, 1);
+    assert.strictEqual(effective.BEL['14'].doublePotential, false);
+
+    writePendingTrades([
+      {
+        id: 'visual-cancelled',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      },
+      {
+        id: 'visual-completed',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].incoming, 0);
+    assert.strictEqual(effective.BEL['14'].effective, 1);
+    assert.strictEqual(effective.BEL['14'].doublePotential, false);
+
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const css = fs.readFileSync(path.join(repoRoot, 'public/css/style.css'), 'utf8');
+    assert.ok(appJs.includes('potential-duplicate'));
+    assert.ok(appJs.includes('doublePotential'));
+    assert.ok(css.includes('.sticker-card.potential-duplicate'));
+
+    writePendingTrades([]);
+  });
+
   await test('pending trade notes can be added edited and removed safely', async () => {
     const create = await post('/api/pending-trades', { received: ['MEX1'], given: [], note: '' });
     assert.strictEqual(create.status, 200);

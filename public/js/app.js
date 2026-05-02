@@ -282,12 +282,19 @@ function pendingImpactForCard(teamCode, cardKey) {
 function cardPendingCounts(teamCode, cardKey) {
   const real = collection[teamCode]?.[cardKey] || 0;
   const impact = pendingImpactForCard(teamCode, cardKey);
+  const potential = Math.max(0, real + impact.incoming - impact.outgoing);
   return {
     real,
     incoming: impact.incoming,
     outgoing: impact.outgoing,
-    potential: Math.max(0, real + impact.incoming - impact.outgoing),
-    tradeable: Math.max(0, real - impact.outgoing)
+    potential,
+    tradeable: Math.max(0, real - impact.outgoing),
+    realOwned: real > 0,
+    realDouble: real > 1,
+    potentialOwned: potential > 0,
+    doublePotential: real <= 1 && potential > 1,
+    incomingPending: impact.incoming > 0,
+    outgoingPending: impact.outgoing > 0
   };
 }
 
@@ -1047,8 +1054,9 @@ function renderCardInner(teamCode, cardKey, count, displayLabel, counts = cardPe
   const checkEl = count > 0 ? `<span class="card-check">✓</span>` : '';
   const doubleBadge = count >= 2 ? `<span class="card-badge">x${count - 1}</span>` : '';
   const incomingBadge = counts.incoming > 0 ? `<span class="card-pending-badge incoming">à recevoir${counts.incoming > 1 ? ` x${counts.incoming}` : ''}</span>` : '';
+  const potentialDoubleBadge = counts.doublePotential ? `<span class="card-pending-badge potential-double">x${counts.potential} potentiel</span>` : '';
   const outgoingBadge = counts.outgoing > 0 ? `<span class="card-pending-badge outgoing">réservée${counts.outgoing > 1 ? ` x${counts.outgoing}` : ''}</span>` : '';
-  return `${doubleBadge}${incomingBadge}${outgoingBadge}<span class="card-num">${displayLabel}</span>${checkEl}`;
+  return `${doubleBadge}${incomingBadge}${potentialDoubleBadge}${outgoingBadge}<span class="card-num">${displayLabel}</span>${checkEl}`;
 }
 
 function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, counts = null) {
@@ -1056,7 +1064,7 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, c
   const stateClass = count === 0 ? 'state-0' : count === 1 ? 'state-1' : 'state-2';
   const fwcClass   = isSpecial ? ' fwc-card' : '';
   const pendingCounts = counts || cardPendingCounts(teamCode, cardKey);
-  const pendingClasses = `${pendingCounts.incoming > 0 ? ' pending-incoming' : ''}${pendingCounts.outgoing > 0 ? ' pending-outgoing' : ''}`;
+  const pendingClasses = `${pendingCounts.incoming > 0 ? ' pending-incoming' : ''}${pendingCounts.outgoing > 0 ? ' pending-outgoing' : ''}${pendingCounts.doublePotential ? ' potential-duplicate' : ''}`;
 
   const el = document.createElement('div');
   el.className = `sticker-card ${stateClass}${fwcClass}${pendingClasses}`;
@@ -1064,6 +1072,11 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, c
   el.dataset.card = cardKey;
   el.dataset.incoming = String(pendingCounts.incoming);
   el.dataset.outgoing = String(pendingCounts.outgoing);
+  el.dataset.potential = String(pendingCounts.potential);
+  el.dataset.doublePotential = String(pendingCounts.doublePotential);
+  if (pendingCounts.doublePotential) {
+    el.title = `Vous en avez ${pendingCounts.real} réellement, +${pendingCounts.incoming} prévu via échange virtuel`;
+  }
   el.innerHTML = renderCardInner(teamCode, cardKey, count, displayLabel, pendingCounts);
 
   // Touch / click handling
@@ -1147,7 +1160,11 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null, source = 'man
 }
 
 function updateCardEl(el, teamCode, cardKey, count) {
-  el.className = el.className.replace(/state-\d/, '').replace(/\bpending-incoming\b/g, '').replace(/\bpending-outgoing\b/g, '');
+  el.className = el.className
+    .replace(/state-\d/, '')
+    .replace(/\bpending-incoming\b/g, '')
+    .replace(/\bpending-outgoing\b/g, '')
+    .replace(/\bpotential-duplicate\b/g, '');
   const stateClass = count === 0 ? 'state-0' : count === 1 ? 'state-1' : 'state-2';
   el.classList.add(stateClass);
 
@@ -1156,8 +1173,12 @@ function updateCardEl(el, teamCode, cardKey, count) {
   const counts = cardPendingCounts(teamCode, cardKey);
   if (counts.incoming > 0) el.classList.add('pending-incoming');
   if (counts.outgoing > 0) el.classList.add('pending-outgoing');
+  if (counts.doublePotential) el.classList.add('potential-duplicate');
   el.dataset.incoming = String(counts.incoming);
   el.dataset.outgoing = String(counts.outgoing);
+  el.dataset.potential = String(counts.potential);
+  el.dataset.doublePotential = String(counts.doublePotential);
+  el.title = counts.doublePotential ? `Vous en avez ${counts.real} réellement, +${counts.incoming} prévu via échange virtuel` : '';
   el.innerHTML = renderCardInner(teamCode, cardKey, count, displayLabel, counts);
 }
 
