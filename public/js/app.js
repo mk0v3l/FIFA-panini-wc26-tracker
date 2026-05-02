@@ -3,6 +3,7 @@ let TEAMS = [];
 let collection = {};
 let historyEntries = [];
 let currentTeam = null;
+const NEARLY_COMPLETE_VIEW = '__nearly_complete__';
 
 
 const FRENCH_TEAM_NAMES = {
@@ -298,6 +299,15 @@ function renderNav() {
   ovItem.onclick = () => navigateTo(null);
   nav.appendChild(ovItem);
 
+  const nearlyItem = document.createElement('div');
+  nearlyItem.className = 'nav-item' + (currentTeam === NEARLY_COMPLETE_VIEW ? ' active' : '');
+  nearlyItem.innerHTML = `<span class="nav-item-flag">🎯</span>
+    <div class="nav-item-info">
+      <div class="nav-item-name">Pays presque terminés</div>
+    </div>`;
+  nearlyItem.onclick = navigateToNearlyComplete;
+  nav.appendChild(nearlyItem);
+
   // Teams filtrées par groupe
   const groups = [...new Set(TEAMS.map(t => t.group))];
 
@@ -397,8 +407,12 @@ function updateGlobalProgress() {
 function refreshCollectionViews() {
   renderNav();
   renderOverview();
+  renderNearlyCompletePage();
   updateGlobalProgress();
-  if (currentTeam) renderTeamPage(currentTeam);
+  if (currentTeam === NEARLY_COMPLETE_VIEW) {
+    document.getElementById('mobile-title').textContent = 'Pays presque terminés';
+  }
+  if (currentTeam && currentTeam !== NEARLY_COMPLETE_VIEW) renderTeamPage(currentTeam);
 }
 
 async function refreshHistory() {
@@ -487,6 +501,75 @@ function renderOverview() {
   }
 }
 
+// ── Nearly complete countries page ────────────────────────────────────────
+function cardDisplayCode(teamCode, cardKey) {
+  if (teamCode === 'FWC') return cardKey === '00' ? '00' : `FWC${cardKey}`;
+  return `${teamCode}${cardKey}`;
+}
+
+function getCardOrder(code) {
+  return code === 'FWC'
+    ? ['00', ...Array.from({ length: 19 }, (_, i) => String(i + 1))]
+    : Array.from({ length: 20 }, (_, i) => String(i + 1));
+}
+
+function missingCardsForTeam(code) {
+  const cards = collection[code] || {};
+  return getCardOrder(code)
+    .filter(cardKey => (cards[cardKey] ?? 0) === 0)
+    .map(cardKey => cardDisplayCode(code, cardKey));
+}
+
+function nearlyCompleteTeams(threshold) {
+  return [...TEAMS, getTeamMeta('FWC')]
+    .map(team => {
+      const progress = teamProgress(team.code);
+      const missing = missingCardsForTeam(team.code);
+      return {
+        ...team,
+        owned: progress.owned,
+        total: progress.total,
+        percent: pct(progress.owned, progress.total),
+        missing
+      };
+    })
+    .filter(team => team.missing.length >= 1 && team.missing.length <= threshold)
+    .sort((a, b) => a.missing.length - b.missing.length || b.percent - a.percent || a.name.localeCompare(b.name));
+}
+
+function renderNearlyCompletePage() {
+  const list = document.getElementById('nearly-list');
+  if (!list) return;
+
+  const thresholdEl = document.getElementById('nearly-threshold');
+  const threshold = Number(thresholdEl ? thresholdEl.value : 4) || 4;
+  const teams = nearlyCompleteTeams(threshold);
+
+  if (!teams.length) {
+    list.innerHTML = '<div class="nearly-empty">Aucun pays ne correspond à ce seuil.</div>';
+    return;
+  }
+
+  list.innerHTML = teams.map(team => `
+    <article class="nearly-card">
+      <div class="nearly-card-main">
+        <span class="nearly-flag">${FLAG_MAP[team.code] || '🏳'}</span>
+        <div class="nearly-info">
+          <div class="nearly-name">${team.name}</div>
+          <div class="nearly-progress">${team.owned}/${team.total} · ${team.percent}%</div>
+        </div>
+        <button type="button" class="nearly-goto" onclick="navigateTo('${team.code}')">Aller au pays</button>
+      </div>
+      <div class="nearly-bar">
+        <div class="nearly-fill" style="width:${team.percent}%;background:${team.color || '#238636'}"></div>
+      </div>
+      <div class="nearly-missing">
+        ${team.missing.map(code => `<span>${code}</span>`).join('')}
+      </div>
+    </article>
+  `).join('');
+}
+
 function updateOverviewCard(code) {
   const card = document.querySelector(`.overview-card[data-code="${code}"]`);
   if (!card) return;
@@ -525,7 +608,7 @@ function getAdjacentTeamCode(code, delta) {
 }
 
 function navigateAdjacentTeam(delta) {
-  if (!currentTeam) return;
+  if (!currentTeam || currentTeam === NEARLY_COMPLETE_VIEW) return;
 
   const nextCode = getAdjacentTeamCode(currentTeam, delta);
   if (!nextCode) return;
@@ -666,6 +749,7 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null) {
   updateOverviewCard(teamCode);
   updateGlobalProgress();
   renderQuickCardSearch();
+  renderNearlyCompletePage();
 
   if (delta > 0) {
     const msgs = next === 1 ? '✅ Collée !' : `📦 Double x${next - 1}`;
@@ -684,6 +768,7 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null) {
     updateOverviewCard(teamCode);
     updateGlobalProgress();
     renderQuickCardSearch();
+    renderNearlyCompletePage();
     showToast('⚠️ Erreur de sauvegarde');
   });
 }
@@ -724,18 +809,35 @@ function navigateTo(code) {
     document.querySelector(`.nav-item[data-code="${code}"]`)?.classList.add('active');
   }
 
-  const ovPage   = document.getElementById('overview-page');
-  const teamPage = document.getElementById('team-page');
+  const ovPage     = document.getElementById('overview-page');
+  const nearlyPage = document.getElementById('nearly-page');
+  const teamPage   = document.getElementById('team-page');
 
   if (code === null) {
     ovPage.classList.add('active');
+    nearlyPage.classList.remove('active');
     teamPage.classList.remove('active');
   } else {
     ovPage.classList.remove('active');
+    nearlyPage.classList.remove('active');
     teamPage.classList.add('active');
     renderTeamPage(code);
   }
 
+  closeSidebar();
+}
+
+function navigateToNearlyComplete() {
+  currentTeam = NEARLY_COMPLETE_VIEW;
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  renderNav();
+
+  document.getElementById('overview-page').classList.remove('active');
+  document.getElementById('team-page').classList.remove('active');
+  document.getElementById('nearly-page').classList.add('active');
+  document.getElementById('mobile-title').textContent = 'Pays presque terminés';
+  renderNearlyCompletePage();
   closeSidebar();
 }
 
@@ -749,6 +851,7 @@ async function confirmReset(code) {
   updateOverviewCard(code);
   updateGlobalProgress();
   renderQuickCardSearch();
+  renderNearlyCompletePage();
   showToast('🗑 Équipe réinitialisée');
 }
 

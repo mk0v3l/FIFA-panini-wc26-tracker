@@ -95,7 +95,31 @@
             Saisissez un code carte.
           </div>
         </section>
+        <div class="overview-actions">
+          <button type="button" class="overview-action-btn" onclick="navigateToNearlyComplete()">
+            Pays presque terminés
+          </button>
+        </div>
         <div id="overview-grid"></div>
+      </div>
+      <div id="nearly-page" class="page">
+        <div class="nearly-header">
+          <div>
+            <h1 class="page-title">Pays presque terminés</h1>
+            <div class="nearly-subtitle">Pays ou section spéciale avec peu de cartes manquantes.</div>
+          </div>
+          <label class="nearly-threshold">
+            <span>Seuil</span>
+            <select id="nearly-threshold" onchange="renderNearlyCompletePage()">
+              <option value="1">1 manquante</option>
+              <option value="2">2 manquantes</option>
+              <option value="3">3 manquantes</option>
+              <option value="4" selected>4 manquantes</option>
+              <option value="5">5 manquantes</option>
+            </select>
+          </label>
+        </div>
+        <div id="nearly-list" class="nearly-list"></div>
       </div>
       <div id="team-page" class="page">
         <!-- filled dynamically -->
