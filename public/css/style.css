@@ -96,6 +96,11 @@ a { text-decoration: none; color: inherit; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.gp-block + .gp-block {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid rgba(48, 54, 61, 0.7);
+}
 .gp-label {
   display: flex;
   justify-content: space-between;
@@ -117,10 +122,22 @@ a { text-decoration: none; color: inherit; }
   width: 0%;
   transition: width 0.4s ease;
 }
+.progress-bar.potential {
+  height: 5px;
+}
+.progress-fill.potential {
+  background: linear-gradient(90deg, #8957e5, #a371f7);
+}
 .gp-counts {
   font-size: 11px;
   color: var(--text-muted);
   margin-top: 5px;
+}
+.gp-note {
+  color: var(--text-muted);
+  font-size: 10px;
+  line-height: 1.35;
+  margin-top: 4px;
 }
 
 /* Navigation */

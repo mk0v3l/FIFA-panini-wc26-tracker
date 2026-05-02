@@ -160,6 +160,27 @@ function globalProgress() {
   return { owned, total, doubles };
 }
 
+function globalPotentialProgress() {
+  let owned = 0, total = 0, doubles = 0;
+  const codes = [...TEAMS.map(t => t.code), 'FWC'];
+
+  for (const code of codes) {
+    const cards = collection[code] || {};
+    for (const card of Object.keys(cards)) {
+      const count = cardPendingCounts(code, card).potential;
+      if (count > 0) owned++;
+      if (count >= 2) doubles += count - 1;
+      total++;
+    }
+  }
+
+  return { owned, total, doubles };
+}
+
+function activePendingTradeCount() {
+  return pendingTrades.filter(trade => trade.status === 'pending').length;
+}
+
 function dashboardStats() {
   const progress = globalProgress();
   const codes = [...TEAMS.map(team => team.code), 'FWC'];
@@ -483,13 +504,23 @@ function updateNavItem(code) {
 
 function updateGlobalProgress() {
   const { owned, total, doubles } = globalProgress();
+  const potential = globalPotentialProgress();
   const p = pct(owned, total);
+  const pp = pct(potential.owned, potential.total);
+  const activePending = activePendingTradeCount();
 
   document.getElementById('global-pct').textContent = `${p}%`;
   document.getElementById('global-bar').style.width = `${p}%`;
 
   document.getElementById('global-counts').textContent =
     `${owned} / ${total} stickers · ${doubles} doublon${doubles > 1 ? 's' : ''}`;
+
+  document.getElementById('global-potential-pct').textContent = `${pp}%`;
+  document.getElementById('global-potential-bar').style.width = `${pp}%`;
+  document.getElementById('global-potential-counts').textContent =
+    `${potential.owned} / ${potential.total} stickers · ${potential.doubles} doublon${potential.doubles > 1 ? 's' : ''} potentiels`;
+  document.getElementById('global-pending-note').textContent =
+    activePending ? `${activePending} échange${activePending > 1 ? 's' : ''} virtuel${activePending > 1 ? 's' : ''} actif${activePending > 1 ? 's' : ''}` : 'Aucun échange virtuel actif';
 
   document.getElementById('mobile-progress-text').textContent = `${p}%`;
 }

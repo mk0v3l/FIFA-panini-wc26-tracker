@@ -19,12 +19,23 @@
     </div>
 
     <div class="global-progress">
-      <div class="gp-label">
-        <span>Collection</span>
-        <span id="global-pct">0%</span>
+      <div class="gp-block gp-real">
+        <div class="gp-label">
+          <span>Collection réelle</span>
+          <span id="global-pct">0%</span>
+        </div>
+        <div class="progress-bar"><div id="global-bar" class="progress-fill"></div></div>
+        <div class="gp-counts" id="global-counts">0 / 0 stickers</div>
       </div>
-      <div class="progress-bar"><div id="global-bar" class="progress-fill"></div></div>
-      <div class="gp-counts" id="global-counts">0 / 0 stickers</div>
+      <div class="gp-block gp-potential">
+        <div class="gp-label">
+          <span>Avec échanges virtuels</span>
+          <span id="global-potential-pct">0%</span>
+        </div>
+        <div class="progress-bar potential"><div id="global-potential-bar" class="progress-fill potential"></div></div>
+        <div class="gp-counts" id="global-potential-counts">0 / 0 stickers</div>
+        <div class="gp-note" id="global-pending-note">Aucun échange virtuel actif</div>
+      </div>
     </div>
 
     <div class="sidebar-search">

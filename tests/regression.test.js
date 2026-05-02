@@ -90,6 +90,35 @@ function writePendingTrades(trades) {
   );
 }
 
+function statsFromCollectionObject(data) {
+  let owned = 0;
+  let total = 0;
+  let doubles = 0;
+  for (const cards of Object.values(data)) {
+    for (const count of Object.values(cards || {})) {
+      if (count > 0) owned++;
+      if (count >= 2) doubles += count - 1;
+      total++;
+    }
+  }
+  return { owned, total, doubles };
+}
+
+function statsFromEffectiveObject(data) {
+  let owned = 0;
+  let total = 0;
+  let doubles = 0;
+  for (const cards of Object.values(data)) {
+    for (const counts of Object.values(cards || {})) {
+      const count = Math.max(0, counts.effective || 0);
+      if (count > 0) owned++;
+      if (count >= 2) doubles += count - 1;
+      total++;
+    }
+  }
+  return { owned, total, doubles };
+}
+
 async function setCount(team, card, desired) {
   let current = (await collection())[team][card] || 0;
   while (current < desired) {
@@ -298,6 +327,71 @@ async function main() {
       }
     ]);
     assert.match((await request('/api/export/missing?format=compact&includePending=1')).text, /\bBEL14\b/);
+
+    writePendingTrades([]);
+  });
+
+  await test('global potential stats include only active pending trades', async () => {
+    await setCount('BEL', '14', 0);
+    await setCount('FRA', '3', 2);
+    await setCount('ARG', '5', 1);
+
+    writePendingTrades([]);
+    const realCollection = await collection();
+    const realStats = statsFromCollectionObject(realCollection);
+    const noPendingStats = statsFromEffectiveObject((await request('/api/effective-collection')).body);
+    assert.deepStrictEqual(noPendingStats, realStats);
+
+    writePendingTrades([
+      {
+        id: 'stats-active',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: ['FRA3', 'ARG5'],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    const activeStats = statsFromEffectiveObject((await request('/api/effective-collection')).body);
+    assert.strictEqual(activeStats.total, realStats.total);
+    assert.strictEqual(realCollection.BEL['14'], 0);
+    assert.strictEqual(activeStats.owned, realStats.owned);
+    assert.strictEqual(activeStats.doubles, realStats.doubles - 1);
+    const activeEffective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(activeEffective.BEL['14'].real, 0);
+    assert.strictEqual(activeEffective.BEL['14'].effective, 1);
+    assert.strictEqual(activeEffective.ARG['5'].real, 1);
+    assert.strictEqual(activeEffective.ARG['5'].effective, 0);
+    assert.ok(activeEffective.ARG['5'].effective >= 0);
+
+    writePendingTrades([
+      {
+        id: 'stats-cancelled',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    const cancelledStats = statsFromEffectiveObject((await request('/api/effective-collection')).body);
+    assert.deepStrictEqual(cancelledStats, realStats);
+
+    writePendingTrades([
+      {
+        id: 'stats-completed',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    const completedStats = statsFromEffectiveObject((await request('/api/effective-collection')).body);
+    assert.deepStrictEqual(completedStats, realStats);
 
     writePendingTrades([]);
   });
