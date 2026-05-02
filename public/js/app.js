@@ -2,10 +2,12 @@
 let TEAMS = [];
 let collection = {};
 let historyEntries = [];
+let pendingTrades = [];
 let currentTeam = null;
 const NEARLY_COMPLETE_VIEW = '__nearly_complete__';
 const EXPORT_VIEW = '__export__';
 const HISTORY_VIEW = '__history__';
+const PENDING_TRADES_VIEW = '__pending_trades__';
 
 
 const FRENCH_TEAM_NAMES = {
@@ -82,6 +84,11 @@ function teamMatchesSearch(team, query) {
   return aliases.some(alias => normalizeSearchText(alias).includes(query));
 }
 
+function cardDisplayCode(teamCode, cardKey) {
+  if (teamCode === 'FWC') return cardKey === '00' ? '00' : `FWC${cardKey}`;
+  return `${teamCode}${cardKey}`;
+}
+
 // Country flag emoji helper (ISO 3166-1 alpha-2)
 const FLAG_MAP = {
   MEX:'🇲🇽', RSA:'🇿🇦', KOR:'🇰🇷', CZE:'🇨🇿',
@@ -125,6 +132,10 @@ async function revertHistoryEntry(id) {
   return api(`/api/history/${encodeURIComponent(id)}/revert`, { method: 'POST' });
 }
 
+async function fetchPendingTrades() {
+  return api('/api/pending-trades');
+}
+
 // ── Progress calculation ───────────────────────────────────────────────────
 function teamProgress(code) {
   const cards = collection[code];
@@ -153,16 +164,24 @@ function dashboardStats() {
   const progress = globalProgress();
   const codes = [...TEAMS.map(team => team.code), 'FWC'];
   let completeTeams = 0;
+  let potentialOwned = 0;
+  let potentialTotal = 0;
 
   for (const code of codes) {
     const team = teamProgress(code);
     if (team.total > 0 && team.owned === team.total) completeTeams++;
+    const cards = collection[code] || {};
+    for (const card of Object.keys(cards)) {
+      potentialTotal++;
+      if (effectiveCardCount(code, card) > 0) potentialOwned++;
+    }
   }
 
   return {
     ...progress,
     missing: Math.max(0, progress.total - progress.owned),
     percent: pct(progress.owned, progress.total),
+    potentialPercent: pct(potentialOwned, potentialTotal),
     completeTeams,
     nearlyCompleteTeams: nearlyCompleteTeams(4).length
   };
@@ -225,6 +244,24 @@ function cardStatus(count) {
   if (count <= 0) return { label: 'Manquante', cls: 'missing' };
   if (count === 1) return { label: 'Possédée', cls: 'owned' };
   return { label: 'Doublon', cls: 'double' };
+}
+
+function pendingImpactForCard(teamCode, cardKey) {
+  const code = cardDisplayCode(teamCode, cardKey);
+  let incoming = 0;
+  let outgoing = 0;
+  for (const trade of pendingTrades) {
+    if (trade.status !== 'pending') continue;
+    incoming += (trade.received || []).filter(card => card === code).length;
+    outgoing += (trade.given || []).filter(card => card === code).length;
+  }
+  return { incoming, outgoing };
+}
+
+function effectiveCardCount(teamCode, cardKey) {
+  const real = collection[teamCode]?.[cardKey] || 0;
+  const impact = pendingImpactForCard(teamCode, cardKey);
+  return real + impact.incoming - impact.outgoing;
 }
 
 function findRenderedCard(teamCode, cardKey) {
@@ -387,7 +424,8 @@ function updateSidebarShortcuts() {
   document.querySelectorAll('.sidebar-shortcut').forEach(el => {
     const isActive =
       el.dataset.view === 'export' && currentTeam === EXPORT_VIEW ||
-      el.dataset.view === 'history' && currentTeam === HISTORY_VIEW;
+      el.dataset.view === 'history' && currentTeam === HISTORY_VIEW ||
+      el.dataset.view === 'pending' && currentTeam === PENDING_TRADES_VIEW;
     el.classList.toggle('active', isActive);
   });
 }
@@ -450,8 +488,10 @@ function refreshCollectionViews() {
     document.getElementById('mobile-title').textContent = 'Export';
   } else if (currentTeam === HISTORY_VIEW) {
     document.getElementById('mobile-title').textContent = 'Historique';
+  } else if (currentTeam === PENDING_TRADES_VIEW) {
+    document.getElementById('mobile-title').textContent = 'Échanges virtuels';
   }
-  if (currentTeam && ![NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW].includes(currentTeam)) {
+  if (currentTeam && ![NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW, PENDING_TRADES_VIEW].includes(currentTeam)) {
     renderTeamPage(currentTeam);
   }
 }
@@ -620,6 +660,7 @@ function renderDashboard() {
     { label: 'Possédées', value: stats.owned },
     { label: 'Manquantes', value: stats.missing },
     { label: 'Doublons', value: stats.doubles },
+    { label: 'Potentiel virtuel', value: `${stats.potentialPercent}%` },
     { label: 'Pays complets', value: stats.completeTeams },
     { label: 'Presque terminés', value: stats.nearlyCompleteTeams }
   ];
@@ -634,6 +675,54 @@ function renderDashboard() {
   renderDashboardHistory();
 }
 
+function formatPendingDate(value) {
+  return formatHistoryDate(value);
+}
+
+function renderPendingTrades() {
+  const list = document.getElementById('pending-trades-list');
+  if (!list) return;
+
+  if (!pendingTrades.length) {
+    list.innerHTML = '<div class="pending-empty">Aucun échange virtuel enregistré</div>';
+    return;
+  }
+
+  list.innerHTML = pendingTrades.slice().reverse().map(trade => {
+    const pending = trade.status === 'pending';
+    return `<article class="pending-trade-card status-${trade.status}">
+      <div class="pending-trade-header">
+        <div>
+          <div class="pending-trade-title">Échange virtuel</div>
+          <div class="pending-trade-date">${formatPendingDate(trade.createdAt)}</div>
+        </div>
+        <span class="pending-status">${trade.status}</span>
+      </div>
+      <div class="pending-trade-cols">
+        <div>
+          <div class="pending-label received">À recevoir</div>
+          <div class="pending-codes">${(trade.received || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
+        </div>
+        <div>
+          <div class="pending-label given">À donner</div>
+          <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
+        </div>
+      </div>
+      ${trade.note ? `<div class="pending-note">${trade.note}</div>` : ''}
+      <div class="pending-actions">
+        <button type="button" class="pending-action complete" onclick="completePendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Confirmer physiquement</button>
+        <button type="button" class="pending-action cancel" onclick="cancelPendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Annuler l’échange virtuel</button>
+      </div>
+    </article>`;
+  }).join('');
+}
+
+async function refreshPendingTrades() {
+  pendingTrades = await fetchPendingTrades();
+  renderPendingTrades();
+  renderDashboard();
+}
+
 function focusQuickCardSearch() {
   navigateTo(null);
   const input = document.getElementById('quick-card-search');
@@ -643,11 +732,6 @@ function focusQuickCardSearch() {
 }
 
 // ── Nearly complete countries page ────────────────────────────────────────
-function cardDisplayCode(teamCode, cardKey) {
-  if (teamCode === 'FWC') return cardKey === '00' ? '00' : `FWC${cardKey}`;
-  return `${teamCode}${cardKey}`;
-}
-
 function getCardOrder(code) {
   return code === 'FWC'
     ? ['00', ...Array.from({ length: 19 }, (_, i) => String(i + 1))]
@@ -749,7 +833,7 @@ function getAdjacentTeamCode(code, delta) {
 }
 
 function navigateAdjacentTeam(delta) {
-  if (!currentTeam || [NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW].includes(currentTeam)) return;
+  if (!currentTeam || [NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW, PENDING_TRADES_VIEW].includes(currentTeam)) return;
 
   const nextCode = getAdjacentTeamCode(currentTeam, delta);
   if (!nextCode) return;
@@ -957,6 +1041,7 @@ function navigateTo(code) {
   const nearlyPage = document.getElementById('nearly-page');
   const exportPage = document.getElementById('export-page');
   const historyPage = document.getElementById('history-page');
+  const pendingPage = document.getElementById('pending-page');
   const teamPage   = document.getElementById('team-page');
 
   if (code === null) {
@@ -964,12 +1049,14 @@ function navigateTo(code) {
     nearlyPage.classList.remove('active');
     exportPage.classList.remove('active');
     historyPage.classList.remove('active');
+    pendingPage.classList.remove('active');
     teamPage.classList.remove('active');
   } else {
     ovPage.classList.remove('active');
     nearlyPage.classList.remove('active');
     exportPage.classList.remove('active');
     historyPage.classList.remove('active');
+    pendingPage.classList.remove('active');
     teamPage.classList.add('active');
     renderTeamPage(code);
   }
@@ -988,6 +1075,7 @@ function navigateToNearlyComplete() {
   document.getElementById('team-page').classList.remove('active');
   document.getElementById('export-page').classList.remove('active');
   document.getElementById('history-page').classList.remove('active');
+  document.getElementById('pending-page').classList.remove('active');
   document.getElementById('nearly-page').classList.add('active');
   document.getElementById('mobile-title').textContent = 'Pays presque terminés';
   renderNearlyCompletePage();
@@ -1004,6 +1092,7 @@ function navigateToExport() {
   document.getElementById('team-page').classList.remove('active');
   document.getElementById('nearly-page').classList.remove('active');
   document.getElementById('history-page').classList.remove('active');
+  document.getElementById('pending-page').classList.remove('active');
   document.getElementById('export-page').classList.add('active');
   document.getElementById('mobile-title').textContent = 'Export';
   closeSidebar();
@@ -1019,9 +1108,27 @@ function navigateToHistory() {
   document.getElementById('team-page').classList.remove('active');
   document.getElementById('nearly-page').classList.remove('active');
   document.getElementById('export-page').classList.remove('active');
+  document.getElementById('pending-page').classList.remove('active');
   document.getElementById('history-page').classList.add('active');
   document.getElementById('mobile-title').textContent = 'Historique';
   renderHistory();
+  closeSidebar();
+}
+
+function navigateToPendingTrades() {
+  currentTeam = PENDING_TRADES_VIEW;
+
+  document.querySelectorAll('.nav-item').forEach(el => el.classList.remove('active'));
+  updateSidebarShortcuts();
+
+  document.getElementById('overview-page').classList.remove('active');
+  document.getElementById('team-page').classList.remove('active');
+  document.getElementById('nearly-page').classList.remove('active');
+  document.getElementById('export-page').classList.remove('active');
+  document.getElementById('history-page').classList.remove('active');
+  document.getElementById('pending-page').classList.add('active');
+  document.getElementById('mobile-title').textContent = 'Échanges virtuels';
+  renderPendingTrades();
   closeSidebar();
 }
 
@@ -1264,11 +1371,13 @@ async function init() {
     api('/api/collection'),
     api('/api/history'),
   ]);
+  pendingTrades = await fetchPendingTrades();
 
   renderNav();
   renderOverview();
   updateGlobalProgress();
   renderHistory();
+  renderPendingTrades();
 }
 
 init();
@@ -1291,12 +1400,14 @@ function closeModal() {
   document.getElementById('trade-received').value = '';
   document.getElementById('trade-given').value = '';
   document.getElementById('trade-allow-unique').checked = false;
+  document.getElementById('trade-note').value = '';
   document.getElementById('compare-friend-doubles').value = '';
   document.getElementById('compare-friend-missing').value = '';
 
   lastCompareTrade = { received: [], given: [] };
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
+  document.getElementById('btn-pending-trade').textContent = 'Enregistrer comme virtuel';
 }
 
 function handleBackdropClick(e) {
@@ -1313,6 +1424,7 @@ function switchTab(tab) {
   document.getElementById('tab-compare').classList.toggle('active', tab === 'compare');
   document.getElementById('btn-import').style.display = tab === 'import' ? '' : 'none';
   document.getElementById('btn-trade').style.display  = tab === 'trade'  ? '' : 'none';
+  document.getElementById('btn-pending-trade').style.display = tab === 'trade' ? '' : 'none';
   document.getElementById('btn-compare').style.display = tab === 'compare' ? '' : 'none';
   document.getElementById('import-result').innerHTML = '';
   document.getElementById('trade-result').innerHTML  = '';
@@ -1389,6 +1501,27 @@ function renderCompareResult(compare) {
       label: 'Codes invalides dans ses manquantes',
       value: compare.invalid.friendMissing.join(', '),
       cls: 'error'
+    });
+  }
+  if (compare.pending && compare.pending.potentiallyReceived.length) {
+    rows.push({
+      label: 'Potentiellement reçues via échange virtuel',
+      value: compare.pending.potentiallyReceived.join(', '),
+      cls: 'warn'
+    });
+  }
+  if (compare.pending && compare.pending.reservedToGive.length) {
+    rows.push({
+      label: 'Réservées dans un échange virtuel',
+      value: compare.pending.reservedToGive.join(', '),
+      cls: 'warn'
+    });
+  }
+  if (compare.pending && compare.pending.potentiallyAvailable.length) {
+    rows.push({
+      label: 'Potentiellement disponibles si virtuel annulé',
+      value: compare.pending.potentiallyAvailable.join(', '),
+      cls: 'warn'
     });
   }
 
@@ -1669,6 +1802,86 @@ async function doTrade() {
   } finally {
     btn.disabled = false;
     btn.textContent = "Confirmer l'échange";
+  }
+}
+
+async function doPendingTrade() {
+  const received = parseInput(document.getElementById('trade-received').value);
+  const given    = parseInput(document.getElementById('trade-given').value);
+  const allowUniqueGiven = document.getElementById('trade-allow-unique').checked;
+  const note = document.getElementById('trade-note').value;
+
+  if (!received.length && !given.length) {
+    showToast('⚠️ Aucune carte saisie');
+    return;
+  }
+
+  const btn = document.getElementById('btn-pending-trade');
+  btn.disabled = true;
+  btn.textContent = '…';
+
+  try {
+    const res = await api('/api/pending-trades', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ received, given, allowUniqueGiven, note }),
+    });
+
+    if (res.error) {
+      const results = res.results || { received: { unknown: [] }, given: { unknown: [], refused: [], uniqueBlocked: [] } };
+      renderResult('trade-result', [
+        { label: 'Reçues inconnues', value: codesValue(results.received.unknown), cls: 'warn' },
+        { label: 'Données inconnues', value: codesValue(results.given.unknown), cls: 'warn' },
+        { label: 'Non disponibles', value: codesValue(results.given.refused), cls: 'error' },
+        { label: 'Uniques protégées', value: codesValue(results.given.uniqueBlocked), cls: 'warn' }
+      ]);
+      showToast('⚠️ Échange virtuel impossible');
+      return;
+    }
+
+    await refreshPendingTrades();
+    await refreshHistory();
+    refreshCollectionViews();
+    showToast('Échange virtuel enregistré');
+    closeModal();
+  } finally {
+    btn.disabled = false;
+    btn.textContent = 'Enregistrer comme virtuel';
+  }
+}
+
+async function completePendingTrade(id) {
+  try {
+    const res = await api(`/api/pending-trades/${encodeURIComponent(id)}/complete`, { method: 'POST' });
+    if (res.error) {
+      showToast(res.error);
+      return;
+    }
+    collection = await api('/api/collection');
+    await refreshPendingTrades();
+    await refreshHistory();
+    refreshCollectionViews();
+    showToast('Échange virtuel confirmé');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Confirmation impossible');
+  }
+}
+
+async function cancelPendingTrade(id) {
+  try {
+    const res = await api(`/api/pending-trades/${encodeURIComponent(id)}/cancel`, { method: 'POST' });
+    if (res.error) {
+      showToast(res.error);
+      return;
+    }
+    await refreshPendingTrades();
+    await refreshHistory();
+    refreshCollectionViews();
+    showToast('Échange virtuel annulé');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Annulation impossible');
   }
 }
 

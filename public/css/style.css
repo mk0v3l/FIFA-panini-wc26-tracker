@@ -418,6 +418,123 @@ a { text-decoration: none; color: inherit; }
   margin-bottom: 0;
 }
 
+.pending-trades-list {
+  display: grid;
+  gap: 12px;
+  max-width: 900px;
+}
+
+.pending-empty,
+.pending-trade-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 14px;
+}
+
+.pending-empty {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.pending-trade-card.status-completed,
+.pending-trade-card.status-cancelled {
+  opacity: 0.72;
+}
+
+.pending-trade-header,
+.pending-actions {
+  align-items: center;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+}
+
+.pending-trade-title {
+  font-size: 15px;
+  font-weight: 700;
+}
+
+.pending-trade-date,
+.pending-note {
+  color: var(--text-muted);
+  font-size: 12px;
+  margin-top: 3px;
+}
+
+.pending-status {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 700;
+  padding: 4px 8px;
+}
+
+.pending-trade-cols {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: 1fr 1fr;
+  margin-top: 12px;
+}
+
+.pending-label {
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.pending-label.received { color: #56d364; }
+.pending-label.given { color: #f85149; }
+
+.pending-codes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.pending-codes span {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  font-family: 'SF Mono', 'Fira Code', monospace;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 3px 8px;
+}
+
+.pending-actions {
+  justify-content: flex-end;
+  margin-top: 12px;
+}
+
+.pending-action {
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  padding: 8px 10px;
+}
+
+.pending-action.complete {
+  background: #1a2f1a;
+  border-color: #238636;
+  color: #56d364;
+}
+
+.pending-action.cancel {
+  background: #3d2200;
+  border-color: #9e6a03;
+  color: var(--accent2);
+}
+
+.pending-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .history-page-header {
   align-items: flex-start;
   display: flex;
@@ -1206,6 +1323,20 @@ a { text-decoration: none; color: inherit; }
     flex-basis: 100%;
   }
 
+  .pending-trade-cols {
+    grid-template-columns: 1fr;
+  }
+
+  .pending-actions,
+  .pending-trade-header {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .pending-action {
+    width: 100%;
+  }
+
   .quick-card-main {
     flex-direction: column;
   }
@@ -1445,6 +1576,22 @@ textarea.card-input::placeholder { color: var(--text-muted); font-size: 12px; }
 .btn-confirm-import { background: #1f4068; border-color: #1f6feb; color: #58a6ff; }
 .btn-confirm-trade  { background: #1a2f1a; border-color: #238636; color: #56d364; }
 .btn-confirm-compare { background: #2d2640; border-color: #8957e5; color: #d2a8ff; }
+.btn-confirm-pending { background: #3d2200; border-color: #9e6a03; color: var(--accent2); }
+
+.trade-note-input {
+  width: 100%;
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font-size: 13px;
+  padding: 10px 12px;
+}
+
+.trade-note-input:focus {
+  border-color: #58a6ff;
+  outline: none;
+}
 
 .compare-actions {
   display: flex;

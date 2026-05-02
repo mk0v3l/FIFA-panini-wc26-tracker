@@ -41,6 +41,7 @@
     <div class="sidebar-shortcuts">
       <button type="button" class="sidebar-shortcut" data-view="export" onclick="navigateToExport()">📤 Export</button>
       <button type="button" class="sidebar-shortcut" data-view="history" onclick="navigateToHistory()">📜 Historique</button>
+      <button type="button" class="sidebar-shortcut" data-view="pending" onclick="navigateToPendingTrades()">🔁 Échanges virtuels</button>
     </div>
   </aside>
 
@@ -150,6 +151,10 @@
           <div id="history-list" class="history-list"></div>
         </section>
       </div>
+      <div id="pending-page" class="page">
+        <h1 class="page-title">Échanges virtuels</h1>
+        <div id="pending-trades-list" class="pending-trades-list"></div>
+      </div>
       <div id="team-page" class="page">
         <!-- filled dynamically -->
       </div>
@@ -201,6 +206,8 @@
             <input type="checkbox" id="trade-allow-unique" />
             <span>Autoriser à donner des cartes uniques</span>
           </label>
+          <div class="textarea-label">Note</div>
+          <input class="trade-note-input" id="trade-note" type="text" maxlength="500" placeholder="Optionnel" />
           <div id="trade-result"></div>
         </div>
         <div class="tab-panel active" id="tab-compare">
@@ -223,6 +230,7 @@
       <div class="modal-footer">
         <button class="modal-btn btn-cancel" onclick="closeModal()">Annuler</button>
         <button class="modal-btn btn-confirm-import" id="btn-import" style="display:none" onclick="doImport()">Importer</button>
+        <button class="modal-btn btn-confirm-pending" id="btn-pending-trade" style="display:none" onclick="doPendingTrade()">Enregistrer comme virtuel</button>
         <button class="modal-btn btn-confirm-trade" id="btn-trade" style="display:none" onclick="doTrade()">Confirmer l'echange</button>
         <button class="modal-btn btn-confirm-compare" id="btn-compare" onclick="doCompare()">Comparer</button>
       </div>
