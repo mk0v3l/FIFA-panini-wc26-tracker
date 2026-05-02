@@ -79,6 +79,25 @@
     <div id="content">
       <div id="overview-page" class="page active">
         <h1 class="page-title">Vue d'ensemble</h1>
+        <section class="dashboard" aria-label="Dashboard collection">
+          <div id="dashboard-stats" class="dashboard-stats"></div>
+          <div class="dashboard-panels">
+            <section class="dashboard-panel">
+              <h2 class="dashboard-title">À faire maintenant</h2>
+              <div class="dashboard-actions">
+                <button type="button" class="dashboard-action" onclick="focusQuickCardSearch()">Rechercher une carte</button>
+                <button type="button" class="dashboard-action" onclick="navigateToNearlyComplete()">Voir pays presque terminés</button>
+                <button type="button" class="dashboard-action" onclick="copyExport('missing')">Copier mes manquantes</button>
+                <button type="button" class="dashboard-action" onclick="copyExport('doubles')">Copier mes doublons</button>
+                <button type="button" class="dashboard-action" onclick="openModal()">Ouvrir l'échange</button>
+              </div>
+            </section>
+            <section class="dashboard-panel">
+              <h2 class="dashboard-title">Activité récente</h2>
+              <div id="dashboard-history" class="dashboard-history"></div>
+            </section>
+          </div>
+        </section>
         <section class="quick-search" aria-label="Recherche rapide d'une carte">
           <label class="quick-search-label" for="quick-card-search">Recherche rapide</label>
           <div class="quick-search-row">

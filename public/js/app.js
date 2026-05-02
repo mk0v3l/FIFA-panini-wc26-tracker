@@ -143,6 +143,25 @@ function globalProgress() {
   return { owned, total, doubles };
 }
 
+function dashboardStats() {
+  const progress = globalProgress();
+  const codes = [...TEAMS.map(team => team.code), 'FWC'];
+  let completeTeams = 0;
+
+  for (const code of codes) {
+    const team = teamProgress(code);
+    if (team.total > 0 && team.owned === team.total) completeTeams++;
+  }
+
+  return {
+    ...progress,
+    missing: Math.max(0, progress.total - progress.owned),
+    percent: pct(progress.owned, progress.total),
+    completeTeams,
+    nearlyCompleteTeams: nearlyCompleteTeams(4).length
+  };
+}
+
 function pct(owned, total) {
   return total === 0 ? 0 : Math.round((owned / total) * 100);
 }
@@ -418,6 +437,7 @@ function refreshCollectionViews() {
 async function refreshHistory() {
   historyEntries = await api('/api/history');
   renderHistory();
+  renderDashboardHistory();
 }
 
 function formatHistoryDate(value) {
@@ -468,6 +488,7 @@ function renderOverview() {
   document.getElementById('mobile-title').textContent = 'Vue d\'ensemble';
   const grid = document.getElementById('overview-grid');
   grid.innerHTML = '';
+  renderDashboard();
   renderQuickCardSearch();
 
   const allTeams = [...TEAMS, { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' }];
@@ -499,6 +520,71 @@ function renderOverview() {
     card.onclick = () => navigateTo(team.code);
     grid.appendChild(card);
   }
+}
+
+function formatHistorySummary(entry) {
+  const count = Array.isArray(entry.deltas)
+    ? entry.deltas.reduce((sum, delta) => sum + Math.abs(delta.delta || 0), 0)
+    : 0;
+  const parts = [];
+  if (entry.imported && entry.imported.length) parts.push(`${entry.imported.length} importée(s)`);
+  if (entry.received && entry.received.length) parts.push(`${entry.received.length} reçue(s)`);
+  if (entry.given && entry.given.length) parts.push(`${entry.given.length} donnée(s)`);
+  if (!parts.length && count) parts.push(`${count} modification(s)`);
+  return parts.join(' · ') || 'Action enregistrée';
+}
+
+function renderDashboardHistory() {
+  const list = document.getElementById('dashboard-history');
+  if (!list) return;
+
+  if (!historyEntries.length) {
+    list.innerHTML = '<div class="dashboard-empty">Aucune activité récente</div>';
+    return;
+  }
+
+  list.innerHTML = historyEntries.slice(0, 4).map(entry => {
+    const title = entry.type === 'trade' ? 'Echange' : 'Import';
+    return `<div class="dashboard-history-item">
+      <div class="dashboard-history-title">
+        <span>${title}</span>
+        <span>${formatHistoryDate(entry.date)}</span>
+      </div>
+      <div class="dashboard-history-meta">${formatHistorySummary(entry)}</div>
+    </div>`;
+  }).join('');
+}
+
+function renderDashboard() {
+  const statsEl = document.getElementById('dashboard-stats');
+  if (!statsEl) return;
+
+  const stats = dashboardStats();
+  const statCards = [
+    { label: 'Progression totale', value: `${stats.percent}%` },
+    { label: 'Possédées', value: stats.owned },
+    { label: 'Manquantes', value: stats.missing },
+    { label: 'Doublons', value: stats.doubles },
+    { label: 'Pays complets', value: stats.completeTeams },
+    { label: 'Presque terminés', value: stats.nearlyCompleteTeams }
+  ];
+
+  statsEl.innerHTML = statCards.map(stat => `
+    <div class="dashboard-stat">
+      <div class="dashboard-stat-value">${stat.value}</div>
+      <div class="dashboard-stat-label">${stat.label}</div>
+    </div>
+  `).join('');
+
+  renderDashboardHistory();
+}
+
+function focusQuickCardSearch() {
+  navigateTo(null);
+  const input = document.getElementById('quick-card-search');
+  if (!input) return;
+  input.focus();
+  input.scrollIntoView({ behavior: 'smooth', block: 'center' });
 }
 
 // ── Nearly complete countries page ────────────────────────────────────────
@@ -750,6 +836,7 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null) {
   updateGlobalProgress();
   renderQuickCardSearch();
   renderNearlyCompletePage();
+  renderDashboard();
 
   if (delta > 0) {
     const msgs = next === 1 ? '✅ Collée !' : `📦 Double x${next - 1}`;
@@ -769,6 +856,7 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null) {
     updateGlobalProgress();
     renderQuickCardSearch();
     renderNearlyCompletePage();
+    renderDashboard();
     showToast('⚠️ Erreur de sauvegarde');
   });
 }
@@ -852,6 +940,7 @@ async function confirmReset(code) {
   updateGlobalProgress();
   renderQuickCardSearch();
   renderNearlyCompletePage();
+  renderDashboard();
   showToast('🗑 Équipe réinitialisée');
 }
 
