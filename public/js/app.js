@@ -1566,7 +1566,7 @@ init();
 
 // ── Modal ──────────────────────────────────────────────────────────────────
 let activeTab = 'compare';
-let lastCompareTrade = { received: [], given: [] };
+let lastCompareTrade = { received: [], given: [], givenPotential: [] };
 
 function openModal() {
   document.getElementById('modal-backdrop').classList.add('open');
@@ -1586,7 +1586,7 @@ function closeModal() {
   document.getElementById('compare-friend-doubles').value = '';
   document.getElementById('compare-friend-missing').value = '';
 
-  lastCompareTrade = { received: [], given: [] };
+  lastCompareTrade = { received: [], given: [], givenPotential: [] };
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
   document.getElementById('btn-pending-trade').textContent = 'Enregistrer comme virtuel';
@@ -1650,22 +1650,22 @@ function codesValue(codes) {
 function renderCompareResult(compare) {
   const rows = [
     {
-      label: 'L’ami peut me donner maintenant',
+      label: 'À recevoir utile',
       value: codesValue(compare.friendCanGive),
       cls: 'ok'
     },
     {
-      label: 'Encore vraiment nécessaires après échanges virtuels',
+      label: 'Encore utiles',
       value: codesValue(compare.friendCanGiveStillNeeded),
       cls: 'ok'
     },
     {
-      label: 'Je peux lui donner maintenant',
+      label: 'À donner maintenant',
       value: codesValue(compare.youCanGive),
       cls: 'ok'
     },
     {
-      label: 'Je pourrai potentiellement lui donner après échanges virtuels',
+      label: 'À donner plus tard',
       value: codesValue(compare.youCanPotentiallyGive),
       cls: 'warn'
     },
@@ -1697,7 +1697,7 @@ function renderCompareResult(compare) {
   }
   if (compare.pending && compare.pending.potentiallyReceived.length) {
     rows.push({
-      label: 'Déjà prévu via échange virtuel',
+      label: 'Déjà prévus',
       value: compare.pending.potentiallyReceived.join(', '),
       cls: 'warn'
     });
@@ -1711,8 +1711,15 @@ function renderCompareResult(compare) {
   }
   if (compare.pending && compare.pending.potentiallyAvailable.length) {
     rows.push({
-      label: 'Potentiellement disponibles si virtuel annulé',
+      label: 'Disponibles si annulé',
       value: compare.pending.potentiallyAvailable.join(', '),
+      cls: 'warn'
+    });
+  }
+  if (compare.proposedTrade.givenPotential && compare.proposedTrade.givenPotential.length) {
+    rows.push({
+      label: 'Avertissement',
+      value: 'Certaines cartes à donner dépendent d’un échange virtuel.',
       cls: 'warn'
     });
   }
@@ -1761,7 +1768,8 @@ async function doCompare() {
 
     lastCompareTrade = {
       received: res.proposedTrade.received,
-      given: res.proposedTrade.given
+      given: res.proposedTrade.given,
+      givenPotential: res.proposedTrade.givenPotential || []
     };
     renderCompareResult(res);
     showToast('Comparaison prête');
@@ -1777,7 +1785,11 @@ function fillTradeFromCompare() {
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
   switchTab('trade');
-  showToast("Listes envoyées vers l'échange");
+  if (lastCompareTrade.givenPotential && lastCompareTrade.givenPotential.length) {
+    showToast('⚠️ Certaines cartes à donner sont seulement potentielles');
+  } else {
+    showToast("Listes envoyées vers l'échange");
+  }
 }
 
 async function doImport() {

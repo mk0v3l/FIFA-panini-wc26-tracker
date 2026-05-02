@@ -602,6 +602,9 @@ async function main() {
     assert.ok(!res.body.youCanGive.includes('URU2'));
     assert.ok(res.body.pending.reservedToGive.includes('URU2'));
     assert.ok(!res.body.youCanPotentiallyGive.includes('ESP4'));
+    assert.ok(res.body.proposedTrade.given.includes('CAN2'));
+    assert.ok(res.body.proposedTrade.given.includes('FRA3'));
+    assert.ok(!res.body.proposedTrade.received.includes('BEL14'));
     assert.strictEqual(snapshotCollection(), beforeCollection);
     assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
     assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
@@ -614,6 +617,52 @@ async function main() {
     assert.ok(missingOnly.body.youCanGive.includes('FRA3'));
     const empty = await post('/api/compare', { friendDoubles: '', friendMissing: '' });
     assert.strictEqual(empty.status, 200);
+
+    writePendingTrades([]);
+  });
+
+  await test('compare send-to-trade payload includes potential gives and short labels', async () => {
+    await setCount('BEL', '14', 1);
+    await setCount('FRA', '3', 2);
+    await setCount('ARG', '5', 0);
+
+    writePendingTrades([
+      {
+        id: 'compare-send-potential-give',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14', 'ARG5'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+
+    const beforeCollection = snapshotCollection();
+    const beforePending = snapshotDataFile('pending-trades.json');
+    const beforeHistory = snapshotDataFile('history.json');
+    const res = await post('/api/compare', {
+      friendDoubles: 'ARG5',
+      friendMissing: 'BEL14 FRA3'
+    });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.youCanPotentiallyGive.includes('BEL14'));
+    assert.ok(!res.body.youCanGive.includes('BEL14'));
+    assert.ok(res.body.youCanGive.includes('FRA3'));
+    assert.ok(res.body.proposedTrade.given.includes('BEL14'));
+    assert.ok(res.body.proposedTrade.given.includes('FRA3'));
+    assert.ok(res.body.proposedTrade.givenPotential.includes('BEL14'));
+    assert.ok(res.body.proposedTrade.givenNow.includes('FRA3'));
+    assert.ok(!res.body.proposedTrade.received.includes('ARG5'));
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    assert.ok(appJs.includes('À donner plus tard'));
+    assert.ok(appJs.includes('Encore utiles'));
+    assert.ok(!appJs.includes('Je pourrai potentiellement lui donner après échanges virtuels'));
+    assert.ok(!appJs.includes('Encore vraiment nécessaires après échanges virtuels'));
 
     writePendingTrades([]);
   });

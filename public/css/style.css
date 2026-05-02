@@ -1512,6 +1512,19 @@ a { text-decoration: none; color: inherit; }
     width: 100%;
   }
 
+  .result-row {
+    flex-wrap: wrap;
+  }
+
+  .result-key,
+  .result-val {
+    max-width: 100%;
+  }
+
+  .result-val {
+    text-align: left;
+  }
+
   .quick-card-main {
     flex-direction: column;
   }
@@ -1781,6 +1794,7 @@ textarea.card-input::placeholder { color: var(--text-muted); font-size: 12px; }
   border: 1px solid var(--border);
   overflow: hidden;
   font-size: 12px;
+  max-width: 100%;
 }
 .result-row {
   display: flex;
@@ -1789,10 +1803,25 @@ textarea.card-input::placeholder { color: var(--text-muted); font-size: 12px; }
   padding: 8px 12px;
   border-bottom: 1px solid var(--border);
   gap: 12px;
+  max-width: 100%;
+  min-width: 0;
 }
 .result-row:last-child { border-bottom: none; }
-.result-key { color: var(--text-muted); font-weight: 500; flex-shrink: 0; }
-.result-val { color: var(--text); text-align: right; font-family: monospace; word-break: break-all; }
+.result-key {
+  color: var(--text-muted);
+  font-weight: 500;
+  max-width: 42%;
+  overflow-wrap: anywhere;
+}
+.result-val {
+  color: var(--text);
+  text-align: right;
+  font-family: monospace;
+  min-width: 0;
+  max-width: 58%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
 .result-val.ok      { color: #56d364; }
 .result-val.warn    { color: var(--accent2); }
 .result-val.error   { color: #f85149; }

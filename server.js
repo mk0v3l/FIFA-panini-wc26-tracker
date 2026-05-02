@@ -1011,7 +1011,9 @@ function compareWithFriend(data, body, pendingTrades = []) {
     youCanPotentiallyGive: youCanPotentiallyGive.map(card => card.code),
     proposedTrade: {
       received: friendCanGiveStillNeeded.map(card => card.code),
-      given: youCanGive.map(card => card.code)
+      given: [...youCanGive, ...youCanPotentiallyGive].map(card => card.code),
+      givenNow: youCanGive.map(card => card.code),
+      givenPotential: youCanPotentiallyGive.map(card => card.code)
     },
     invalid: {
       friendDoubles: [...parsedDoubles.invalid, ...friendDoublesCards.unknown],
