@@ -574,6 +574,23 @@ app.get('/api/teams', (_req, res) => res.json(TEAMS));
 
 app.get('/api/collection', (_req, res) => res.json(loadData()));
 
+app.get('/api/effective-collection', (_req, res) => {
+  const data = loadData();
+  const pendingTrades = loadPendingTrades();
+  const result = {};
+
+  const addCards = (team, cardMap) => {
+    result[team] = {};
+    for (const card of Object.keys(cardMap || {})) {
+      result[team][card] = cardCountsWithPending(data, pendingTrades, team, card);
+    }
+  };
+
+  addCards('FWC', data.FWC || {});
+  for (const team of TEAMS) addCards(team.code, data[team.code] || {});
+  res.json(result);
+});
+
 app.get('/api/history', (_req, res) => {
   res.json(loadHistory().slice(-20).reverse());
 });

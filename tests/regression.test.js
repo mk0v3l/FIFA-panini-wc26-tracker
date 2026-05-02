@@ -246,12 +246,24 @@ async function main() {
     assert.strictEqual(create.status, 200);
     assert.strictEqual(snapshotCollection(), before);
     assert.ok((await request('/api/pending-trades')).body.some(trade => trade.id === create.body.trade.id));
+    const effective = await request('/api/effective-collection');
+    assert.strictEqual(effective.status, 200);
+    assert.strictEqual(effective.body.URU['1'].real, 0);
+    assert.strictEqual(effective.body.URU['1'].incoming, 1);
+    assert.strictEqual(effective.body.URU['1'].effective, 1);
+    assert.strictEqual(effective.body.URU['2'].real, 2);
+    assert.strictEqual(effective.body.URU['2'].outgoing, 1);
+    assert.strictEqual(effective.body.URU['2'].tradeable, 1);
     const compare = await post('/api/compare', { friendDoubles: 'URU1', friendMissing: 'URU2' });
     assert.ok(compare.body.pending.potentiallyReceived.includes('URU1'));
     assert.ok(compare.body.pending.reservedToGive.includes('URU2'));
     const cancel = await post(`/api/pending-trades/${create.body.trade.id}/cancel`);
     assert.strictEqual(cancel.status, 200);
     assert.strictEqual(snapshotCollection(), before);
+    const effectiveAfterCancel = await request('/api/effective-collection');
+    assert.strictEqual(effectiveAfterCancel.body.URU['1'].incoming, 0);
+    assert.strictEqual(effectiveAfterCancel.body.URU['1'].effective, 0);
+    assert.strictEqual(effectiveAfterCancel.body.URU['2'].outgoing, 0);
 
     const create2 = await post('/api/pending-trades', { received: ['URU1'], given: ['URU2'], allowUniqueGiven: false });
     assert.strictEqual(create2.status, 200);
@@ -261,6 +273,10 @@ async function main() {
     const beforeObj = JSON.parse(before);
     assert.strictEqual(after.URU['1'], (beforeObj.URU['1'] || 0) + 1);
     assert.strictEqual(after.URU['2'], (beforeObj.URU['2'] || 0) - 1);
+    const effectiveAfterComplete = await request('/api/effective-collection');
+    assert.strictEqual(effectiveAfterComplete.body.URU['1'].incoming, 0);
+    assert.strictEqual(effectiveAfterComplete.body.URU['1'].real, after.URU['1']);
+    assert.strictEqual(effectiveAfterComplete.body.URU['2'].outgoing, 0);
     assert.strictEqual((await post(`/api/pending-trades/${create2.body.trade.id}/complete`)).status, 400);
   });
 }

@@ -258,10 +258,28 @@ function pendingImpactForCard(teamCode, cardKey) {
   return { incoming, outgoing };
 }
 
-function effectiveCardCount(teamCode, cardKey) {
+function cardPendingCounts(teamCode, cardKey) {
   const real = collection[teamCode]?.[cardKey] || 0;
   const impact = pendingImpactForCard(teamCode, cardKey);
-  return real + impact.incoming - impact.outgoing;
+  return {
+    real,
+    incoming: impact.incoming,
+    outgoing: impact.outgoing,
+    potential: Math.max(0, real + impact.incoming - impact.outgoing),
+    tradeable: Math.max(0, real - impact.outgoing)
+  };
+}
+
+function effectiveCardCount(teamCode, cardKey) {
+  return cardPendingCounts(teamCode, cardKey).potential;
+}
+
+function teamPotentialProgress(code) {
+  const cards = collection[code];
+  if (!cards) return { owned: 0, total: 0 };
+  const keys = Object.keys(cards);
+  const owned = keys.filter(card => effectiveCardCount(code, card) > 0).length;
+  return { owned, total: keys.length };
 }
 
 function findRenderedCard(teamCode, cardKey) {
@@ -675,6 +693,15 @@ function renderDashboard() {
   renderDashboardHistory();
 }
 
+function escapeHtml(value) {
+  return String(value || '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
 function formatPendingDate(value) {
   return formatHistoryDate(value);
 }
@@ -708,7 +735,7 @@ function renderPendingTrades() {
           <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
         </div>
       </div>
-      ${trade.note ? `<div class="pending-note">${trade.note}</div>` : ''}
+      ${trade.note ? `<div class="pending-note">${escapeHtml(trade.note)}</div>` : ''}
       <div class="pending-actions">
         <button type="button" class="pending-action complete" onclick="completePendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Confirmer physiquement</button>
         <button type="button" class="pending-action cancel" onclick="cancelPendingTrade('${trade.id}')" ${pending ? '' : 'disabled'}>Annuler l’échange virtuel</button>
@@ -721,6 +748,9 @@ async function refreshPendingTrades() {
   pendingTrades = await fetchPendingTrades();
   renderPendingTrades();
   renderDashboard();
+  if (currentTeam && ![NEARLY_COMPLETE_VIEW, EXPORT_VIEW, HISTORY_VIEW, PENDING_TRADES_VIEW].includes(currentTeam)) {
+    renderTeamPage(currentTeam);
+  }
 }
 
 function focusQuickCardSearch() {
@@ -853,6 +883,8 @@ function renderTeamPage(code) {
   const cards = collection[code] || {};
   const p = teamProgress(code);
   const progress = pct(p.owned, p.total);
+  const potential = teamPotentialProgress(code);
+  const potentialProgress = pct(potential.owned, potential.total);
   const color = team.color || '#238636';
   const flag = FLAG_MAP[code] || '🏳';
   const prevCode = getAdjacentTeamCode(code, -1);
@@ -882,7 +914,13 @@ function renderTeamPage(code) {
           <div class="team-progress-fill" id="team-prog-fill" style="width:${progress}%;background:${color}"></div>
         </div>
         <div class="team-stats" id="team-stats-text">
-          <strong>${p.owned}</strong> collectées · <strong>${p.doubles}</strong> doublons · ${progress}%
+          Réel : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%
+        </div>
+        <div class="team-progress-bar potential">
+          <div class="team-progress-fill potential" id="team-potential-fill" style="width:${potentialProgress}%;background:#8957e5"></div>
+        </div>
+        <div class="team-stats potential" id="team-potential-text">
+          Avec échanges virtuels : <strong>${potential.owned}</strong> / ${potential.total} · ${potentialProgress}%
         </div>
       </div>
       <div class="team-actions">
@@ -903,22 +941,32 @@ function renderTeamPage(code) {
   const grid = document.getElementById(`cards-grid-${code}`);
   for (const key of cardKeys) {
     const count = cards[key] ?? 0;
-    grid.appendChild(makeCardEl(code, key, count, isSpecial, cardLabel(key)));
+    grid.appendChild(makeCardEl(code, key, count, isSpecial, cardLabel(key), cardPendingCounts(code, key)));
   }
 }
 
-function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null) {
+function renderCardInner(teamCode, cardKey, count, displayLabel, counts = cardPendingCounts(teamCode, cardKey)) {
+  const checkEl = count > 0 ? `<span class="card-check">✓</span>` : '';
+  const doubleBadge = count >= 2 ? `<span class="card-badge">x${count - 1}</span>` : '';
+  const incomingBadge = counts.incoming > 0 ? `<span class="card-pending-badge incoming">à recevoir${counts.incoming > 1 ? ` x${counts.incoming}` : ''}</span>` : '';
+  const outgoingBadge = counts.outgoing > 0 ? `<span class="card-pending-badge outgoing">réservée${counts.outgoing > 1 ? ` x${counts.outgoing}` : ''}</span>` : '';
+  return `${doubleBadge}${incomingBadge}${outgoingBadge}<span class="card-num">${displayLabel}</span>${checkEl}`;
+}
+
+function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, counts = null) {
   const displayLabel = label ?? cardKey;
   const stateClass = count === 0 ? 'state-0' : count === 1 ? 'state-1' : 'state-2';
   const fwcClass   = isSpecial ? ' fwc-card' : '';
-  const checkEl    = count > 0 ? `<span class="card-check">✓</span>` : '';
-  const badgeEl    = count >= 2 ? `<span class="card-badge">x${count - 1}</span>` : '';
+  const pendingCounts = counts || cardPendingCounts(teamCode, cardKey);
+  const pendingClasses = `${pendingCounts.incoming > 0 ? ' pending-incoming' : ''}${pendingCounts.outgoing > 0 ? ' pending-outgoing' : ''}`;
 
   const el = document.createElement('div');
-  el.className = `sticker-card ${stateClass}${fwcClass}`;
+  el.className = `sticker-card ${stateClass}${fwcClass}${pendingClasses}`;
   el.dataset.team = teamCode;
   el.dataset.card = cardKey;
-  el.innerHTML = `${badgeEl}<span class="card-num">${displayLabel}</span>${checkEl}`;
+  el.dataset.incoming = String(pendingCounts.incoming);
+  el.dataset.outgoing = String(pendingCounts.outgoing);
+  el.innerHTML = renderCardInner(teamCode, cardKey, count, displayLabel, pendingCounts);
 
   // Touch / click handling
   let pressTimer = null;
@@ -1001,28 +1049,39 @@ async function applyCardDelta(teamCode, cardKey, delta, el = null, source = 'man
 }
 
 function updateCardEl(el, teamCode, cardKey, count) {
-  el.className = el.className.replace(/state-\d/, '');
+  el.className = el.className.replace(/state-\d/, '').replace(/\bpending-incoming\b/g, '').replace(/\bpending-outgoing\b/g, '');
   const stateClass = count === 0 ? 'state-0' : count === 1 ? 'state-1' : 'state-2';
   el.classList.add(stateClass);
 
   const isFwc = teamCode === 'FWC';
   const displayLabel = isFwc && cardKey !== '00' ? `FWC${cardKey}` : cardKey;
-  const checkEl = count > 0 ? `<span class="card-check">✓</span>` : '';
-  const badgeEl = count >= 2 ? `<span class="card-badge">x${count - 1}</span>` : '';
-  el.innerHTML = `${badgeEl}<span class="card-num">${displayLabel}</span>${checkEl}`;
+  const counts = cardPendingCounts(teamCode, cardKey);
+  if (counts.incoming > 0) el.classList.add('pending-incoming');
+  if (counts.outgoing > 0) el.classList.add('pending-outgoing');
+  el.dataset.incoming = String(counts.incoming);
+  el.dataset.outgoing = String(counts.outgoing);
+  el.innerHTML = renderCardInner(teamCode, cardKey, count, displayLabel, counts);
 }
 
 function updateTeamStats(code) {
   const fillEl = document.getElementById('team-prog-fill');
   const statsEl = document.getElementById('team-stats-text');
+  const potentialFillEl = document.getElementById('team-potential-fill');
+  const potentialTextEl = document.getElementById('team-potential-text');
   if (!fillEl || !statsEl) return;
 
   const p = teamProgress(code);
   const progress = pct(p.owned, p.total);
+  const potential = teamPotentialProgress(code);
+  const potentialProgress = pct(potential.owned, potential.total);
   const team = code === 'FWC' ? { color: '#1f6feb' } : TEAMS.find(t => t.code === code);
   fillEl.style.width = `${progress}%`;
   fillEl.style.background = team?.color || '#238636';
-  statsEl.innerHTML = `<strong>${p.owned}</strong> collectées · <strong>${p.doubles}</strong> doublons · ${progress}%`;
+  statsEl.innerHTML = `Réel : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%`;
+  if (potentialFillEl) potentialFillEl.style.width = `${potentialProgress}%`;
+  if (potentialTextEl) {
+    potentialTextEl.innerHTML = `Avec échanges virtuels : <strong>${potential.owned}</strong> / ${potential.total} · ${potentialProgress}%`;
+  }
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
