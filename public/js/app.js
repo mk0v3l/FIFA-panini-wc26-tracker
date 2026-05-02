@@ -1196,13 +1196,12 @@ async function init() {
 init();
 
 // ── Modal ──────────────────────────────────────────────────────────────────
-let activeTab = 'import';
+let activeTab = 'compare';
 let lastCompareTrade = { received: [], given: [] };
 
 function openModal() {
   document.getElementById('modal-backdrop').classList.add('open');
-  switchTab('import');
-  document.getElementById('import-input').focus();
+  switchTab('compare');
 }
 
 function closeModal() {

@@ -157,12 +157,12 @@
         <button class="modal-close" onclick="closeModal()">&times;</button>
       </div>
       <div class="modal-tabs">
-        <button class="modal-tab active" data-tab="import" onclick="switchTab('import')">Import</button>
+        <button class="modal-tab active" data-tab="compare" onclick="switchTab('compare')">Comparer</button>
+        <button class="modal-tab" data-tab="import" onclick="switchTab('import')">Import</button>
         <button class="modal-tab" data-tab="trade" onclick="switchTab('trade')">Echange</button>
-        <button class="modal-tab" data-tab="compare" onclick="switchTab('compare')">Comparer</button>
       </div>
       <div class="modal-body">
-        <div class="tab-panel active" id="tab-import">
+        <div class="tab-panel" id="tab-import">
           <p class="modal-desc">
             Entrez les codes des cartes recues, une par ligne ou separees par des virgules.<br>
             Format : <code>MEX5</code> <code>FRA10</code> <code>BEL20</code> <code>FWC3</code> <code>00</code><br>
@@ -193,7 +193,7 @@
           </label>
           <div id="trade-result"></div>
         </div>
-        <div class="tab-panel" id="tab-compare">
+        <div class="tab-panel active" id="tab-compare">
           <p class="modal-desc">
             Collez les doublons d'un ami et, si vous les avez, ses cartes manquantes. La comparaison ne modifie pas la collection.
           </p>
@@ -212,9 +212,9 @@
       </div>
       <div class="modal-footer">
         <button class="modal-btn btn-cancel" onclick="closeModal()">Annuler</button>
-        <button class="modal-btn btn-confirm-import" id="btn-import" onclick="doImport()">Importer</button>
+        <button class="modal-btn btn-confirm-import" id="btn-import" style="display:none" onclick="doImport()">Importer</button>
         <button class="modal-btn btn-confirm-trade" id="btn-trade" style="display:none" onclick="doTrade()">Confirmer l'echange</button>
-        <button class="modal-btn btn-confirm-compare" id="btn-compare" style="display:none" onclick="doCompare()">Comparer</button>
+        <button class="modal-btn btn-confirm-compare" id="btn-compare" onclick="doCompare()">Comparer</button>
       </div>
     </div>
   </div>
