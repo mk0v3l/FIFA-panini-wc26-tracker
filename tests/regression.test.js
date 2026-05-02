@@ -453,6 +453,91 @@ async function main() {
     writePendingTrades([]);
   });
 
+  await test('comparison separates real needs and pending potential trades', async () => {
+    await setCount('BEL', '14', 0);
+    await setCount('FRA', '12', 0);
+    await setCount('CAN', '2', 1);
+    await setCount('FRA', '3', 2);
+    await setCount('URU', '2', 2);
+    await setCount('ESP', '4', 1);
+    await setCount('JPN', '6', 0);
+    await setCount('JPN', '7', 0);
+
+    writePendingTrades([
+      {
+        id: 'compare-incoming-missing',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14', 'CAN2'],
+        given: [],
+        note: '',
+        source: 'regression'
+      },
+      {
+        id: 'compare-outgoing-reserved',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: [],
+        given: ['URU2'],
+        note: '',
+        source: 'regression'
+      },
+      {
+        id: 'compare-cancelled',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['ESP4', 'JPN6'],
+        given: [],
+        note: '',
+        source: 'regression'
+      },
+      {
+        id: 'compare-completed',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['ESP4', 'JPN7'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+
+    const beforeCollection = snapshotCollection();
+    const beforePending = snapshotDataFile('pending-trades.json');
+    const beforeHistory = snapshotDataFile('history.json');
+    const res = await post('/api/compare', {
+      friendDoubles: 'bel14, FRA12\nJPN6 JPN7',
+      friendMissing: 'CAN2, FRA3, URU2, ESP4'
+    });
+    assert.strictEqual(res.status, 200);
+    assert.ok(res.body.friendCanGive.includes('BEL14'));
+    assert.ok(!res.body.friendCanGiveStillNeeded.includes('BEL14'));
+    assert.ok(res.body.pending.potentiallyReceived.includes('BEL14'));
+    assert.ok(res.body.friendCanGiveStillNeeded.includes('FRA12'));
+    assert.ok(res.body.friendCanGiveStillNeeded.includes('JPN6'));
+    assert.ok(res.body.friendCanGiveStillNeeded.includes('JPN7'));
+    assert.ok(res.body.youCanPotentiallyGive.includes('CAN2'));
+    assert.ok(!res.body.youCanGive.includes('CAN2'));
+    assert.ok(res.body.youCanGive.includes('FRA3'));
+    assert.ok(!res.body.youCanGive.includes('URU2'));
+    assert.ok(res.body.pending.reservedToGive.includes('URU2'));
+    assert.ok(!res.body.youCanPotentiallyGive.includes('ESP4'));
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforePending);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+
+    const doublesOnly = await post('/api/compare', { friendDoubles: 'FRA12', friendMissing: '' });
+    assert.strictEqual(doublesOnly.status, 200);
+    assert.ok(doublesOnly.body.friendCanGiveStillNeeded.includes('FRA12'));
+    const missingOnly = await post('/api/compare', { friendDoubles: '', friendMissing: 'FRA3' });
+    assert.strictEqual(missingOnly.status, 200);
+    assert.ok(missingOnly.body.youCanGive.includes('FRA3'));
+    const empty = await post('/api/compare', { friendDoubles: '', friendMissing: '' });
+    assert.strictEqual(empty.status, 200);
+
+    writePendingTrades([]);
+  });
+
   await test('friend comparison works and does not mutate collection', async () => {
     await setCount('ESP', '4', 0);
     await setCount('FRA', '3', 2);

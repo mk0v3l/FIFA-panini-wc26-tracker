@@ -493,7 +493,7 @@ function cardCountsWithPending(data, pendingTrades, team, card) {
     real,
     incoming,
     outgoing,
-    effective: real + incoming - outgoing,
+    effective: Math.max(0, real + incoming - outgoing),
     tradeable: Math.max(0, real - outgoing)
   };
 }
@@ -510,7 +510,7 @@ function collectionCodeSetWithPending(data, pendingTrades, predicate) {
         real: real || 0,
         incoming,
         outgoing,
-        effective: (real || 0) + incoming - outgoing,
+        effective: Math.max(0, (real || 0) + incoming - outgoing),
         tradeable: Math.max(0, (real || 0) - outgoing)
       };
       if (!predicate(counts)) continue;
@@ -967,18 +967,26 @@ function compareWithFriend(data, body, pendingTrades = []) {
   const friendDoublesCards = uniqueValidCodes(parsedDoubles.codes, data);
   const friendMissingCards = uniqueValidCodes(parsedMissing.codes, data);
   const myMissing = collectionCodeSetWithPending(data, pendingTrades, counts => counts.real === 0);
+  const myRemainingMissing = collectionCodeSetWithPending(data, pendingTrades, counts => counts.effective === 0);
   const myDoubles = collectionCodeSetWithPending(data, pendingTrades, counts => counts.tradeable >= 2);
   const myReservedDoubles = collectionCodeSetWithPending(data, pendingTrades, counts => counts.real >= 2 && counts.outgoing > 0);
   const myPotentialDoubles = collectionCodeSetWithPending(data, pendingTrades, counts => counts.real >= 2 && counts.tradeable < 2 && counts.outgoing > 0);
+  const myPendingPotentialDoubles = collectionCodeSetWithPending(data, pendingTrades, counts => counts.effective >= 2 && counts.tradeable < 2);
 
   const friendDoublesByKey = new Map(friendDoublesCards.valid.map(card => [card.key, card]));
   const friendMissingByKey = new Map(friendMissingCards.valid.map(card => [card.key, card]));
   const friendCanGive = [...myMissing.keys()]
     .filter(key => friendDoublesByKey.has(key))
     .map(key => friendDoublesByKey.get(key));
+  const friendCanGiveStillNeeded = [...myRemainingMissing.keys()]
+    .filter(key => friendDoublesByKey.has(key))
+    .map(key => friendDoublesByKey.get(key));
   const youCanGive = [...myDoubles.keys()]
     .filter(key => friendMissingByKey.has(key))
     .map(key => myDoubles.get(key));
+  const youCanPotentiallyGive = [...myPendingPotentialDoubles.keys()]
+    .filter(key => friendMissingByKey.has(key))
+    .map(key => myPendingPotentialDoubles.get(key));
   const potentiallyReceived = friendCanGive
     .filter(card => myMissing.get(card.key)?.counts.incoming > 0)
     .map(card => card.code);
@@ -991,9 +999,11 @@ function compareWithFriend(data, body, pendingTrades = []) {
 
   return {
     friendCanGive: friendCanGive.map(card => card.code),
+    friendCanGiveStillNeeded: friendCanGiveStillNeeded.map(card => card.code),
     youCanGive: youCanGive.map(card => card.code),
+    youCanPotentiallyGive: youCanPotentiallyGive.map(card => card.code),
     proposedTrade: {
-      received: friendCanGive.map(card => card.code),
+      received: friendCanGiveStillNeeded.map(card => card.code),
       given: youCanGive.map(card => card.code)
     },
     invalid: {
@@ -1003,11 +1013,14 @@ function compareWithFriend(data, body, pendingTrades = []) {
     pending: {
       potentiallyReceived,
       reservedToGive,
-      potentiallyAvailable
+      potentiallyAvailable,
+      potentialDoubles: youCanPotentiallyGive.map(card => card.code)
     },
     stats: {
       friendCanGiveCount: friendCanGive.length,
-      youCanGiveCount: youCanGive.length
+      friendCanGiveStillNeededCount: friendCanGiveStillNeeded.length,
+      youCanGiveCount: youCanGive.length,
+      youCanPotentiallyGiveCount: youCanPotentiallyGive.length
     }
   };
 }

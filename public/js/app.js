@@ -1629,14 +1629,24 @@ function codesValue(codes) {
 function renderCompareResult(compare) {
   const rows = [
     {
-      label: 'Cartes de son stock utiles pour moi',
+      label: 'L’ami peut me donner maintenant',
       value: codesValue(compare.friendCanGive),
       cls: 'ok'
     },
     {
-      label: 'Cartes que je peux lui donner',
+      label: 'Encore vraiment nécessaires après échanges virtuels',
+      value: codesValue(compare.friendCanGiveStillNeeded),
+      cls: 'ok'
+    },
+    {
+      label: 'Je peux lui donner maintenant',
       value: codesValue(compare.youCanGive),
       cls: 'ok'
+    },
+    {
+      label: 'Je pourrai potentiellement lui donner après échanges virtuels',
+      value: codesValue(compare.youCanPotentiallyGive),
+      cls: 'warn'
     },
     {
       label: 'Échange proposé - je reçois',
@@ -1666,7 +1676,7 @@ function renderCompareResult(compare) {
   }
   if (compare.pending && compare.pending.potentiallyReceived.length) {
     rows.push({
-      label: 'Potentiellement reçues via échange virtuel',
+      label: 'Déjà prévu via échange virtuel',
       value: compare.pending.potentiallyReceived.join(', '),
       cls: 'warn'
     });
@@ -1707,6 +1717,7 @@ async function doCompare() {
   const friendMissing = document.getElementById('compare-friend-missing').value;
 
   if (!friendDoubles.trim() && !friendMissing.trim()) {
+    renderResult('compare-result', [{ label: 'Comparaison', value: 'Aucune liste saisie', cls: 'warn' }]);
     showToast('⚠️ Aucune liste saisie');
     return;
   }
