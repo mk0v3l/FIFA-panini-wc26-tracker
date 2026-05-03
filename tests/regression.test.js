@@ -189,7 +189,7 @@ async function main() {
     assert.ok(!css.includes('grid-column: span 2'));
     assert.ok(!css.includes('calc((var(--album-card-width) * 2)'));
     assert.ok(appJs.includes("teamCode !== 'FWC' && cardKey === '13'"));
-    assert.ok(appJs.includes('makeCardEl(code, key, count, true'));
+    assert.ok(appJs.includes('makeCardEl(dataCode, key, count, true'));
     assert.ok(appJs.includes("rowKeys.includes('13')"));
     assert.ok(css.includes('--album-card-width'));
     assert.ok(css.includes('grid-template-columns: repeat(var(--album-row-count), var(--album-card-width))'));
@@ -201,11 +201,26 @@ async function main() {
     assert.ok(appJs.includes('function getFwcSplitGroups'));
     assert.ok(appJs.includes("key === '00' || Number(key) <= 8"));
     assert.ok(appJs.includes("key !== '00' && Number(key) >= 9"));
-    assert.ok(appJs.includes('FWC Special 00-8'));
-    assert.ok(appJs.includes('FWC Special 9-19'));
+    assert.ok(appJs.includes('const FWC_START_VIEW'));
+    assert.ok(appJs.includes('const FWC_END_VIEW'));
+    assert.ok(appJs.includes('Special début'));
+    assert.ok(appJs.includes('Special fin'));
+    assert.ok(appJs.includes('getFwcKeysForView(code)'));
+    assert.ok(appJs.includes("code === FWC_END_VIEW ? 'FWC 9-19' : 'FWC 00-8'"));
+    assert.ok(appJs.includes("sectionGrid.appendChild(makeCardEl(dataCode, key, count, true"));
+    assert.ok(appJs.includes('return [FWC_START_VIEW, ...TEAMS.map(t => t.code), FWC_END_VIEW]'));
+    assert.ok(appJs.includes("navigateTo(parsed.team === 'FWC' ? fwcViewForCard(parsed.card) : parsed.team)"));
     assert.ok(!appJs.includes("'0', ...Array.from"));
     assert.ok(appJs.includes("String(i + 1)"));
     assert.ok(appJs.includes('length: 19'));
+
+    const fwcKeys = ['00', ...Array.from({ length: 19 }, (_, i) => String(i + 1))];
+    const fwcStart = fwcKeys.filter(key => key === '00' || Number(key) <= 8);
+    const fwcEnd = fwcKeys.filter(key => key !== '00' && Number(key) >= 9);
+    assert.deepStrictEqual(fwcStart, ['00', '1', '2', '3', '4', '5', '6', '7', '8']);
+    assert.deepStrictEqual(fwcEnd, ['9', '10', '11', '12', '13', '14', '15', '16', '17', '18', '19']);
+    assert.strictEqual(fwcStart.filter(key => fwcEnd.includes(key)).length, 0);
+    assert.deepStrictEqual([...fwcStart, ...fwcEnd], fwcKeys);
   });
 
   await test('card touch handling distinguishes tap long press and scroll', async () => {

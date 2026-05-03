@@ -8,6 +8,8 @@ const NEARLY_COMPLETE_VIEW = '__nearly_complete__';
 const EXPORT_VIEW = '__export__';
 const HISTORY_VIEW = '__history__';
 const PENDING_TRADES_VIEW = '__pending_trades__';
+const FWC_START_VIEW = '__fwc_start__';
+const FWC_END_VIEW = '__fwc_end__';
 
 
 const FRENCH_TEAM_NAMES = {
@@ -77,8 +79,9 @@ function teamMatchesSearch(team, query) {
 
   const aliases = [
     team.code,
+    team.dataCode,
     team.name,
-    ...(FRENCH_TEAM_NAMES[team.code] || [])
+    ...(FRENCH_TEAM_NAMES[team.dataCode || team.code] || [])
   ];
 
   return aliases.some(alias => normalizeSearchText(alias).includes(query));
@@ -221,10 +224,19 @@ function progressColor(p) {
 
 // ── Quick card search ──────────────────────────────────────────────────────
 function getTeamMeta(code) {
-  if (code === 'FWC') {
-    return { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' };
+  if (code === 'FWC' || code === FWC_START_VIEW || code === FWC_END_VIEW) {
+    const name = code === FWC_START_VIEW ? 'Special début' : code === FWC_END_VIEW ? 'Special fin' : 'FWC Special';
+    return { code, dataCode: 'FWC', name, group: '★', color: '#1f6feb' };
   }
   return TEAMS.find(team => team.code === code) || null;
+}
+
+function dataCodeForView(code) {
+  return code === FWC_START_VIEW || code === FWC_END_VIEW ? 'FWC' : code;
+}
+
+function isFwcView(code) {
+  return code === 'FWC' || code === FWC_START_VIEW || code === FWC_END_VIEW;
 }
 
 function getCountryAlbumRows(cardKeys = Array.from({ length: 20 }, (_, i) => String(i + 1))) {
@@ -248,6 +260,17 @@ function getFwcSplitGroups(cardKeys = getFwcCardKeys()) {
   const first = cardKeys.filter(key => key === '00' || Number(key) <= 8);
   const second = cardKeys.filter(key => key !== '00' && Number(key) >= 9);
   return { first, second };
+}
+
+function getFwcKeysForView(code) {
+  const groups = getFwcSplitGroups();
+  if (code === FWC_START_VIEW) return groups.first;
+  if (code === FWC_END_VIEW) return groups.second;
+  return getFwcCardKeys();
+}
+
+function fwcViewForCard(cardKey) {
+  return cardKey === '00' || Number(cardKey) <= 8 ? FWC_START_VIEW : FWC_END_VIEW;
 }
 
 function normalizeCardCode(raw) {
@@ -360,7 +383,7 @@ function renderQuickCardSearch() {
   const count = collection[parsed.team][parsed.card] ?? 0;
   const status = cardStatus(count);
   const sectionLabel = parsed.team === 'FWC'
-    ? 'Section spéciale'
+    ? (fwcViewForCard(parsed.card) === FWC_START_VIEW ? 'Special début' : 'Special fin')
     : `Pays ${team.name}`;
 
   result.className = 'quick-card-result';
@@ -400,7 +423,7 @@ function goToQuickCard() {
     renderQuickCardSearch();
     return;
   }
-  navigateTo(parsed.team);
+  navigateTo(parsed.team === 'FWC' ? fwcViewForCard(parsed.card) : parsed.team);
 }
 
 async function adjustQuickCard(delta) {
@@ -442,8 +465,9 @@ function renderNav() {
   let visibleCount = 0;
 
   const fwcTeam = {
-    code: 'FWC',
-    name: 'FWC Special',
+    code: FWC_START_VIEW,
+    dataCode: 'FWC',
+    name: 'Special début',
     group: 'FWC',
     color: '#1f6feb'
   };
@@ -451,9 +475,9 @@ function renderNav() {
   if (teamMatchesSearch(fwcTeam, query)) {
     const fwcHeaderTop = document.createElement('div');
     fwcHeaderTop.className = 'group-header nav-item-special';
-    fwcHeaderTop.textContent = 'Spécial 00-8';
+    fwcHeaderTop.textContent = 'Cartes Special';
     nav.appendChild(fwcHeaderTop);
-    nav.appendChild(makeNavItem({ ...fwcTeam, name: 'FWC Special 00-8' }));
+    nav.appendChild(makeNavItem(fwcTeam));
     visibleCount++;
   }
 
@@ -478,13 +502,21 @@ function renderNav() {
     }
   }
 
-  if (teamMatchesSearch(fwcTeam, query)) {
+  const fwcEndTeam = {
+    code: FWC_END_VIEW,
+    dataCode: 'FWC',
+    name: 'Special fin',
+    group: 'FWC',
+    color: '#1f6feb'
+  };
+
+  if (teamMatchesSearch(fwcEndTeam, query)) {
     const fwcHeader = document.createElement('div');
     fwcHeader.className = 'group-header nav-item-special';
     fwcHeader.style.paddingTop = '12px';
-    fwcHeader.textContent = 'Spécial 9-19';
+    fwcHeader.textContent = 'Cartes Special fin';
     nav.appendChild(fwcHeader);
-    nav.appendChild(makeNavItem({ ...fwcTeam, name: 'FWC Special 9-19' }));
+    nav.appendChild(makeNavItem(fwcEndTeam));
     visibleCount++;
   }
 
@@ -508,16 +540,18 @@ function updateSidebarShortcuts() {
 }
 
 function makeNavItem(team) {
-  const p = teamProgress(team.code);
+  const dataCode = team.dataCode || team.code;
+  const p = teamProgress(dataCode);
   const progress = pct(p.owned, p.total);
   const item = document.createElement('div');
   item.className = 'nav-item' + (currentTeam === team.code ? ' active' : '');
   item.dataset.code = team.code;
+  item.dataset.dataCode = dataCode;
   item.innerHTML = `
-    <span class="nav-item-flag">${FLAG_MAP[team.code] || '🏳'}</span>
+    <span class="nav-item-flag">${FLAG_MAP[dataCode] || '🏳'}</span>
     <div class="nav-item-info">
       <div class="nav-item-name">${team.name}</div>
-      <div class="nav-item-code">${team.code} · ${progress}%</div>
+      <div class="nav-item-code">${dataCode} · ${progress}%</div>
     </div>
     <div class="nav-mini-bar">
       <div class="nav-mini-fill" style="width:${progress}%;background:${progressColor(progress)}"></div>
@@ -529,15 +563,16 @@ function makeNavItem(team) {
 function updateNavItem(code) {
   const p = teamProgress(code);
   const progress = pct(p.owned, p.total);
-  const item = document.querySelector(`.nav-item[data-code="${code}"]`);
-  if (!item) return;
-  const codeEl  = item.querySelector('.nav-item-code');
-  const fillEl  = item.querySelector('.nav-mini-fill');
-  if (codeEl) codeEl.textContent = `${code} · ${progress}%`;
-  if (fillEl) {
-    fillEl.style.width = `${progress}%`;
-    fillEl.style.background = progressColor(progress);
-  }
+  const items = document.querySelectorAll(`.nav-item[data-data-code="${code}"], .nav-item[data-code="${code}"]`);
+  items.forEach(item => {
+    const codeEl  = item.querySelector('.nav-item-code');
+    const fillEl  = item.querySelector('.nav-mini-fill');
+    if (codeEl) codeEl.textContent = `${code} · ${progress}%`;
+    if (fillEl) {
+      fillEl.style.width = `${progress}%`;
+      fillEl.style.background = progressColor(progress);
+    }
+  });
 }
 
 function updateGlobalProgress() {
@@ -673,25 +708,27 @@ function renderOverview() {
   renderQuickCardSearch();
 
   const allTeams = [
-    { code: 'FWC', name: 'FWC Special 00-8', group: '★', color: '#1f6feb' },
+    { code: FWC_START_VIEW, dataCode: 'FWC', name: 'Special début', group: '★', color: '#1f6feb' },
     ...TEAMS,
-    { code: 'FWC', name: 'FWC Special 9-19', group: '★', color: '#1f6feb' }
+    { code: FWC_END_VIEW, dataCode: 'FWC', name: 'Special fin', group: '★', color: '#1f6feb' }
   ];
 
   for (const team of allTeams) {
-    const p = teamProgress(team.code);
+    const dataCode = team.dataCode || team.code;
+    const p = teamProgress(dataCode);
     const progress = pct(p.owned, p.total);
     const color = team.color || '#238636';
 
     const card = document.createElement('div');
     card.className = 'overview-card';
     card.dataset.code = team.code;
+    card.dataset.dataCode = dataCode;
     card.innerHTML = `
       <div class="ov-header">
-        <span class="ov-flag">${FLAG_MAP[team.code] || '🏳'}</span>
+        <span class="ov-flag">${FLAG_MAP[dataCode] || '🏳'}</span>
         <div>
           <div class="ov-name">${team.name}</div>
-          <div class="ov-code">${team.code}</div>
+          <div class="ov-code">${dataCode}</div>
         </div>
         <span class="ov-group">Gr.${team.group}</span>
       </div>
@@ -999,7 +1036,7 @@ function renderNearlyCompletePage() {
 }
 
 function updateOverviewCard(code) {
-  const overviewCards = document.querySelectorAll(`.overview-card[data-code="${code}"]`);
+  const overviewCards = document.querySelectorAll(`.overview-card[data-data-code="${code}"], .overview-card[data-code="${code}"]`);
   if (!overviewCards.length) return;
   const team = code === 'FWC'
     ? { code: 'FWC', color: '#1f6feb' }
@@ -1022,8 +1059,7 @@ function updateOverviewCard(code) {
 }
 // ── Navigation pays précédent / suivant ───────────────────────────────────
 function getTeamOrder() {
-  // Même ordre que dans la navigation : tous les pays, puis FWC Special à la fin
-  return [...TEAMS.map(t => t.code), 'FWC'];
+  return [FWC_START_VIEW, ...TEAMS.map(t => t.code), FWC_END_VIEW];
 }
 
 function getAdjacentTeamCode(code, delta) {
@@ -1047,21 +1083,22 @@ function navigateAdjacentTeam(delta) {
 }
 // ── Team / FWC page ────────────────────────────────────────────────────────
 function renderTeamPage(code) {
-  const isSpecial = code === 'FWC';
+  const dataCode = dataCodeForView(code);
+  const isSpecial = dataCode === 'FWC';
   const team = isSpecial
-    ? { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' }
+    ? getTeamMeta(code)
     : TEAMS.find(t => t.code === code);
 
   document.getElementById('mobile-title').textContent = team.name;
 
   const page = document.getElementById('team-page');
-  const cards = collection[code] || {};
-  const p = teamProgress(code);
+  const cards = collection[dataCode] || {};
+  const p = teamProgress(dataCode);
   const progress = pct(p.owned, p.total);
-  const potential = teamPotentialProgress(code);
+  const potential = teamPotentialProgress(dataCode);
   const potentialProgress = pct(potential.owned, potential.total);
   const color = team.color || '#238636';
-  const flag = FLAG_MAP[code] || '🏳';
+  const flag = FLAG_MAP[dataCode] || '🏳';
   const prevCode = getAdjacentTeamCode(code, -1);
   const nextCode = getAdjacentTeamCode(code, +1);
 
@@ -1070,7 +1107,7 @@ function renderTeamPage(code) {
 
   // Ordre des cartes : équipes = 1-20 ; FWC special = 00 puis FWC1-FWC19
   const cardKeys = isSpecial
-    ? getFwcCardKeys()
+    ? getFwcKeysForView(code)
     : Array.from({ length: 20 }, (_, i) => String(i + 1));
 
   // Label affiché sur la carte (FWC special : "00" ou "FWC1"…"FWC19")
@@ -1084,7 +1121,7 @@ function renderTeamPage(code) {
       <span class="team-flag-large">${flag}</span>
       <div class="team-info">
         <div class="team-name-large">${team.name}</div>
-        <div class="team-meta">${isSpecial ? 'Cartes spéciales' : `Groupe ${team.group} · ${code}`} · ${p.total} stickers</div>
+        <div class="team-meta">${isSpecial ? 'Cartes spéciales' : `Groupe ${team.group} · ${code}`} · ${cardKeys.length} stickers</div>
         <div class="team-progress-bar">
           <div class="team-progress-fill" id="team-prog-fill" style="width:${progress}%;background:${color}"></div>
         </div>
@@ -1107,7 +1144,7 @@ function renderTeamPage(code) {
     ${nextCode} ${nextFlag} →
   </button>
 
-  <button class="team-btn reset-btn" onclick="confirmReset('${code}')">🗑 Reset</button>
+  <button class="team-btn reset-btn" onclick="confirmReset('${dataCode}')">🗑 Reset</button>
 </div>
     </div>
 
@@ -1115,28 +1152,22 @@ function renderTeamPage(code) {
 
   const grid = document.getElementById(`cards-grid-${code}`);
   if (isSpecial) {
-    const groups = getFwcSplitGroups(cardKeys);
-    [
-      { title: 'FWC 00-8', keys: groups.first },
-      { title: 'FWC 9-19', keys: groups.second }
-    ].forEach(group => {
-      const section = document.createElement('section');
-      section.className = 'fwc-card-section';
-      section.innerHTML = `<h2 class="fwc-card-section-title">${group.title}</h2><div class="cards-grid fwc-card-grid-inner"></div>`;
-      const sectionGrid = section.querySelector('.fwc-card-grid-inner');
-      for (const key of group.keys) {
-        const count = cards[key] ?? 0;
-        sectionGrid.appendChild(makeCardEl(code, key, count, true, cardLabel(key), cardPendingCounts(code, key)));
-      }
-      grid.appendChild(section);
-    });
+    const section = document.createElement('section');
+    section.className = 'fwc-card-section';
+    section.innerHTML = `<h2 class="fwc-card-section-title">${code === FWC_END_VIEW ? 'FWC 9-19' : 'FWC 00-8'}</h2><div class="cards-grid fwc-card-grid-inner"></div>`;
+    const sectionGrid = section.querySelector('.fwc-card-grid-inner');
+    for (const key of cardKeys) {
+      const count = cards[key] ?? 0;
+      sectionGrid.appendChild(makeCardEl(dataCode, key, count, true, cardLabel(key), cardPendingCounts(dataCode, key)));
+    }
+    grid.appendChild(section);
   } else {
     for (const rowKeys of getCountryAlbumRows(cardKeys)) {
       const row = document.createElement('div');
       row.className = `album-card-row album-row-${rowKeys.length}${rowKeys.includes('13') ? ' album-row-team' : ''}`;
       for (const key of rowKeys) {
         const count = cards[key] ?? 0;
-        row.appendChild(makeCardEl(code, key, count, false, cardLabel(key), cardPendingCounts(code, key)));
+        row.appendChild(makeCardEl(dataCode, key, count, false, cardLabel(key), cardPendingCounts(dataCode, key)));
       }
       grid.appendChild(row);
     }
