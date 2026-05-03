@@ -96,14 +96,10 @@ a { text-decoration: none; color: inherit; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
-.gp-block + .gp-block {
-  margin-top: 10px;
-  padding-top: 10px;
-  border-top: 1px solid rgba(48, 54, 61, 0.7);
-}
 .gp-label {
   display: flex;
   justify-content: space-between;
+  gap: 8px;
   font-size: 12px;
   margin-bottom: 6px;
   color: var(--text-muted);
@@ -127,6 +123,20 @@ a { text-decoration: none; color: inherit; }
 }
 .progress-fill.potential {
   background: linear-gradient(90deg, #8957e5, #a371f7);
+}
+.global-pending-toggle {
+  align-items: flex-start;
+  color: var(--text);
+  display: flex;
+  font-size: 11px;
+  gap: 7px;
+  line-height: 1.3;
+  margin-top: 8px;
+  max-width: 100%;
+}
+.global-pending-toggle input {
+  flex-shrink: 0;
+  margin: 1px 0 0;
 }
 .gp-counts {
   font-size: 11px;

@@ -4,6 +4,8 @@ let collection = {};
 let historyEntries = [];
 let pendingTrades = [];
 let currentTeam = null;
+let includePendingGlobally = false;
+const INCLUDE_PENDING_STORAGE_KEY = 'panini_include_pending';
 const NEARLY_COMPLETE_VIEW = '__nearly_complete__';
 const EXPORT_VIEW = '__export__';
 const HISTORY_VIEW = '__history__';
@@ -139,42 +141,49 @@ async function fetchPendingTrades() {
   return api('/api/pending-trades');
 }
 
+function loadIncludePendingPreference() {
+  try {
+    return localStorage.getItem(INCLUDE_PENDING_STORAGE_KEY) === 'true';
+  } catch {
+    return false;
+  }
+}
+
+function saveIncludePendingPreference(value) {
+  try {
+    localStorage.setItem(INCLUDE_PENDING_STORAGE_KEY, value ? 'true' : 'false');
+  } catch {
+    // localStorage can be unavailable in private or restricted contexts.
+  }
+}
+
+function cardQuantityForView(teamCode, cardKey, includePending = false) {
+  const real = collection[teamCode]?.[cardKey] ?? 0;
+  if (!includePending) return real;
+  return cardPendingCounts(teamCode, cardKey).potential;
+}
+
 // ── Progress calculation ───────────────────────────────────────────────────
-function teamProgress(code) {
+function teamProgress(code, options = {}) {
+  const includePending = Boolean(options.includePending);
   const cards = collection[code];
   if (!cards) return { owned: 0, total: 0, doubles: 0 };
-  const vals = Object.values(cards);
+  const vals = Object.keys(cards).map(cardKey => cardQuantityForView(code, cardKey, includePending));
   const owned   = vals.filter(v => v > 0).length;
   const doubles = vals.filter(v => v >= 2).reduce((s, v) => s + (v - 1), 0);
   return { owned, total: vals.length, doubles };
 }
 
-function globalProgress() {
+function globalProgress(options = {}) {
+  const includePending = Boolean(options.includePending);
   let owned = 0, total = 0, doubles = 0;
   const codes = [...TEAMS.map(t => t.code), 'FWC'];
 
   for (const code of codes) {
-    const p = teamProgress(code);
+    const p = teamProgress(code, { includePending });
     owned += p.owned;
     total += p.total;
     doubles += p.doubles;
-  }
-
-  return { owned, total, doubles };
-}
-
-function globalPotentialProgress() {
-  let owned = 0, total = 0, doubles = 0;
-  const codes = [...TEAMS.map(t => t.code), 'FWC'];
-
-  for (const code of codes) {
-    const cards = collection[code] || {};
-    for (const card of Object.keys(cards)) {
-      const count = cardPendingCounts(code, card).potential;
-      if (count > 0) owned++;
-      if (count >= 2) doubles += count - 1;
-      total++;
-    }
   }
 
   return { owned, total, doubles };
@@ -185,27 +194,20 @@ function activePendingTradeCount() {
 }
 
 function dashboardStats() {
-  const progress = globalProgress();
+  const includePending = includePendingGlobally;
+  const progress = globalProgress({ includePending });
   const codes = [...TEAMS.map(team => team.code), 'FWC'];
   let completeTeams = 0;
-  let potentialOwned = 0;
-  let potentialTotal = 0;
 
   for (const code of codes) {
-    const team = teamProgress(code);
+    const team = teamProgress(code, { includePending });
     if (team.total > 0 && team.owned === team.total) completeTeams++;
-    const cards = collection[code] || {};
-    for (const card of Object.keys(cards)) {
-      potentialTotal++;
-      if (effectiveCardCount(code, card) > 0) potentialOwned++;
-    }
   }
 
   return {
     ...progress,
     missing: Math.max(0, progress.total - progress.owned),
     percent: pct(progress.owned, progress.total),
-    potentialPercent: pct(potentialOwned, potentialTotal),
     completeTeams,
     nearlyCompleteTeams: nearlyCompleteTeams(4).length
   };
@@ -342,18 +344,6 @@ function cardPendingCounts(teamCode, cardKey) {
     incomingPending: impact.incoming > 0,
     outgoingPending: impact.outgoing > 0
   };
-}
-
-function effectiveCardCount(teamCode, cardKey) {
-  return cardPendingCounts(teamCode, cardKey).potential;
-}
-
-function teamPotentialProgress(code) {
-  const cards = collection[code];
-  if (!cards) return { owned: 0, total: 0 };
-  const keys = Object.keys(cards);
-  const owned = keys.filter(card => effectiveCardCount(code, card) > 0).length;
-  return { owned, total: keys.length };
 }
 
 function findRenderedCard(teamCode, cardKey) {
@@ -541,7 +531,7 @@ function updateSidebarShortcuts() {
 
 function makeNavItem(team) {
   const dataCode = team.dataCode || team.code;
-  const p = teamProgress(dataCode);
+  const p = teamProgress(dataCode, { includePending: includePendingGlobally });
   const progress = pct(p.owned, p.total);
   const item = document.createElement('div');
   item.className = 'nav-item' + (currentTeam === team.code ? ' active' : '');
@@ -561,7 +551,7 @@ function makeNavItem(team) {
 }
 
 function updateNavItem(code) {
-  const p = teamProgress(code);
+  const p = teamProgress(code, { includePending: includePendingGlobally });
   const progress = pct(p.owned, p.total);
   const items = document.querySelectorAll(`.nav-item[data-data-code="${code}"], .nav-item[data-code="${code}"]`);
   items.forEach(item => {
@@ -576,11 +566,12 @@ function updateNavItem(code) {
 }
 
 function updateGlobalProgress() {
-  const { owned, total, doubles } = globalProgress();
-  const potential = globalPotentialProgress();
+  const { owned, total, doubles } = globalProgress({ includePending: includePendingGlobally });
   const p = pct(owned, total);
-  const pp = pct(potential.owned, potential.total);
   const activePending = activePendingTradeCount();
+  const label = includePendingGlobally ? 'Collection avec échanges virtuels' : 'Collection';
+
+  document.getElementById('global-mode-label').textContent = label;
 
   document.getElementById('global-pct').textContent = `${p}%`;
   document.getElementById('global-bar').style.width = `${p}%`;
@@ -588,14 +579,22 @@ function updateGlobalProgress() {
   document.getElementById('global-counts').textContent =
     `${owned} / ${total} stickers · ${doubles} doublon${doubles > 1 ? 's' : ''}`;
 
-  document.getElementById('global-potential-pct').textContent = `${pp}%`;
-  document.getElementById('global-potential-bar').style.width = `${pp}%`;
-  document.getElementById('global-potential-counts').textContent =
-    `${potential.owned} / ${potential.total} stickers · ${potential.doubles} doublon${potential.doubles > 1 ? 's' : ''} potentiels`;
   document.getElementById('global-pending-note').textContent =
     activePending ? `${activePending} échange${activePending > 1 ? 's' : ''} virtuel${activePending > 1 ? 's' : ''} actif${activePending > 1 ? 's' : ''}` : 'Aucun échange virtuel actif';
 
   document.getElementById('mobile-progress-text').textContent = `${p}%`;
+}
+
+function setupGlobalPendingToggle() {
+  includePendingGlobally = loadIncludePendingPreference();
+  const input = document.getElementById('global-include-pending');
+  if (!input) return;
+  input.checked = includePendingGlobally;
+  input.addEventListener('change', () => {
+    includePendingGlobally = input.checked;
+    saveIncludePendingPreference(includePendingGlobally);
+    refreshCollectionViews();
+  });
 }
 
 function refreshCollectionViews() {
@@ -715,7 +714,7 @@ function renderOverview() {
 
   for (const team of allTeams) {
     const dataCode = team.dataCode || team.code;
-    const p = teamProgress(dataCode);
+    const p = teamProgress(dataCode, { includePending: includePendingGlobally });
     const progress = pct(p.owned, p.total);
     const color = team.color || '#238636';
 
@@ -788,7 +787,6 @@ function renderDashboard() {
     { label: 'Possédées', value: stats.owned },
     { label: 'Manquantes', value: stats.missing },
     { label: 'Doublons', value: stats.doubles },
-    { label: 'Potentiel virtuel', value: `${stats.potentialPercent}%` },
     { label: 'Pays complets', value: stats.completeTeams },
     { label: 'Presque terminés', value: stats.nearlyCompleteTeams }
   ];
@@ -990,16 +988,15 @@ function getCardOrder(code) {
 }
 
 function missingCardsForTeam(code) {
-  const cards = collection[code] || {};
   return getCardOrder(code)
-    .filter(cardKey => (cards[cardKey] ?? 0) === 0)
+    .filter(cardKey => cardQuantityForView(code, cardKey, includePendingGlobally) === 0)
     .map(cardKey => cardDisplayCode(code, cardKey));
 }
 
 function nearlyCompleteTeams(threshold) {
   return [...TEAMS, getTeamMeta('FWC')]
     .map(team => {
-      const progress = teamProgress(team.code);
+      const progress = teamProgress(team.code, { includePending: includePendingGlobally });
       const missing = missingCardsForTeam(team.code);
       return {
         ...team,
@@ -1052,7 +1049,7 @@ function updateOverviewCard(code) {
   const team = code === 'FWC'
     ? { code: 'FWC', color: '#1f6feb' }
     : TEAMS.find(t => t.code === code);
-  const p = teamProgress(code);
+  const p = teamProgress(code, { includePending: includePendingGlobally });
   const progress = pct(p.owned, p.total);
   const color = team?.color || '#238636';
   overviewCards.forEach(card => {
@@ -1104,10 +1101,9 @@ function renderTeamPage(code) {
 
   const page = document.getElementById('team-page');
   const cards = collection[dataCode] || {};
-  const p = teamProgress(dataCode);
+  const p = teamProgress(dataCode, { includePending: includePendingGlobally });
   const progress = pct(p.owned, p.total);
-  const potential = teamPotentialProgress(dataCode);
-  const potentialProgress = pct(potential.owned, potential.total);
+  const progressModeLabel = includePendingGlobally ? 'Avec échanges virtuels' : 'Réel';
   const color = team.color || '#238636';
   const flag = FLAG_MAP[dataCode] || '🏳';
   const prevCode = getAdjacentTeamCode(code, -1);
@@ -1137,13 +1133,7 @@ function renderTeamPage(code) {
           <div class="team-progress-fill" id="team-prog-fill" style="width:${progress}%;background:${color}"></div>
         </div>
         <div class="team-stats" id="team-stats-text">
-          Réel : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%
-        </div>
-        <div class="team-progress-bar potential">
-          <div class="team-progress-fill potential" id="team-potential-fill" style="width:${potentialProgress}%;background:#8957e5"></div>
-        </div>
-        <div class="team-stats potential" id="team-potential-text">
-          Avec échanges virtuels : <strong>${potential.owned}</strong> / ${potential.total} · ${potentialProgress}%
+          ${progressModeLabel} : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%
         </div>
       </div>
       <div class="team-actions">
@@ -1377,22 +1367,15 @@ function updateCardEl(el, teamCode, cardKey, count) {
 function updateTeamStats(code) {
   const fillEl = document.getElementById('team-prog-fill');
   const statsEl = document.getElementById('team-stats-text');
-  const potentialFillEl = document.getElementById('team-potential-fill');
-  const potentialTextEl = document.getElementById('team-potential-text');
   if (!fillEl || !statsEl) return;
 
-  const p = teamProgress(code);
+  const p = teamProgress(code, { includePending: includePendingGlobally });
   const progress = pct(p.owned, p.total);
-  const potential = teamPotentialProgress(code);
-  const potentialProgress = pct(potential.owned, potential.total);
+  const progressModeLabel = includePendingGlobally ? 'Avec échanges virtuels' : 'Réel';
   const team = code === 'FWC' ? { color: '#1f6feb' } : TEAMS.find(t => t.code === code);
   fillEl.style.width = `${progress}%`;
   fillEl.style.background = team?.color || '#238636';
-  statsEl.innerHTML = `Réel : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%`;
-  if (potentialFillEl) potentialFillEl.style.width = `${potentialProgress}%`;
-  if (potentialTextEl) {
-    potentialTextEl.innerHTML = `Avec échanges virtuels : <strong>${potential.owned}</strong> / ${potential.total} · ${potentialProgress}%`;
-  }
+  statsEl.innerHTML = `${progressModeLabel} : <strong>${p.owned}</strong> / ${p.total} · <strong>${p.doubles}</strong> doublons · ${progress}%`;
 }
 
 // ── Navigation ─────────────────────────────────────────────────────────────
@@ -1543,11 +1526,9 @@ function showToast(msg) {
 async function copyExport(type) {
   const label = type === 'missing' ? 'cartes manquantes' : 'doublons';
   const formatEl = document.getElementById('export-format');
-  const includePendingEl = document.getElementById('export-include-pending');
   const format = formatEl ? formatEl.value : 'grouped';
-  const includePending = includePendingEl ? includePendingEl.checked : false;
   const params = new URLSearchParams({ format });
-  if (includePending) params.set('includePending', '1');
+  if (includePendingGlobally) params.set('includePending', '1');
 
   try {
     const res = await fetch(`/api/export/${type}?${params.toString()}`);
@@ -1746,6 +1727,7 @@ async function init() {
     api('/api/history'),
   ]);
   pendingTrades = await fetchPendingTrades();
+  setupGlobalPendingToggle();
 
   renderNav();
   renderOverview();

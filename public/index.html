@@ -19,21 +19,17 @@
     </div>
 
     <div class="global-progress">
-      <div class="gp-block gp-real">
+      <div class="gp-block">
         <div class="gp-label">
-          <span>Collection réelle</span>
+          <span id="global-mode-label">Collection</span>
           <span id="global-pct">0%</span>
         </div>
         <div class="progress-bar"><div id="global-bar" class="progress-fill"></div></div>
         <div class="gp-counts" id="global-counts">0 / 0 stickers</div>
-      </div>
-      <div class="gp-block gp-potential">
-        <div class="gp-label">
-          <span>Avec échanges virtuels</span>
-          <span id="global-potential-pct">0%</span>
-        </div>
-        <div class="progress-bar potential"><div id="global-potential-bar" class="progress-fill potential"></div></div>
-        <div class="gp-counts" id="global-potential-counts">0 / 0 stickers</div>
+        <label class="global-pending-toggle">
+          <input type="checkbox" id="global-include-pending">
+          <span>Inclure échanges virtuels</span>
+        </label>
         <div class="gp-note" id="global-pending-note">Aucun échange virtuel actif</div>
       </div>
     </div>
@@ -142,12 +138,8 @@
             <option value="whatsapp">WhatsApp</option>
           </select>
 
-          <label class="export-pending-option">
-            <input type="checkbox" id="export-include-pending">
-            <span>Prendre en compte les échanges virtuels</span>
-          </label>
           <p class="export-pending-note">
-            Les cartes à recevoir virtuellement sont retirées des manquantes, et les cartes réservées virtuellement sont retirées des doublons disponibles.
+            Les exports suivent l'option globale "Inclure échanges virtuels" du volet latéral.
           </p>
 
           <div class="page-action-grid">

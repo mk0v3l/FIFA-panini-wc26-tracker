@@ -281,6 +281,28 @@ async function main() {
     assert.deepStrictEqual('BEL14 XXX999 FRA3'.match(counterPattern).map(normalize), ['BEL14', 'XXX999', 'FRA3']);
   });
 
+  await test('global pending toggle drives view stats and exports', async () => {
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const html = fs.readFileSync(path.join(repoRoot, 'public/index.html'), 'utf8');
+    assert.ok(html.includes('id="global-include-pending"'));
+    assert.ok(html.includes('id="global-mode-label"'));
+    assert.ok(html.includes('Inclure échanges virtuels'));
+    assert.ok(!html.includes('id="global-potential-pct"'));
+    assert.ok(!html.includes('id="export-include-pending"'));
+    assert.ok(appJs.includes("const INCLUDE_PENDING_STORAGE_KEY = 'panini_include_pending'"));
+    assert.ok(appJs.includes('let includePendingGlobally = false'));
+    assert.ok(appJs.includes('localStorage.getItem(INCLUDE_PENDING_STORAGE_KEY)'));
+    assert.ok(appJs.includes('localStorage.setItem(INCLUDE_PENDING_STORAGE_KEY'));
+    assert.ok(appJs.includes('function cardQuantityForView'));
+    assert.ok(appJs.includes('cardQuantityForView(code, cardKey, includePending)'));
+    assert.ok(appJs.includes('globalProgress({ includePending: includePendingGlobally })'));
+    assert.ok(appJs.includes('teamProgress(dataCode, { includePending: includePendingGlobally })'));
+    assert.ok(appJs.includes('cardQuantityForView(code, cardKey, includePendingGlobally) === 0'));
+    assert.ok(appJs.includes("if (includePendingGlobally) params.set('includePending', '1')"));
+    assert.ok(appJs.includes('setupGlobalPendingToggle();'));
+    assert.ok(appJs.includes('refreshCollectionViews();'));
+  });
+
   await test('card parsing and import normalization', async () => {
     const res = await post('/api/import', { cards: 'bel14, FCW3\nFRA12 MEX1 MEX99' });
     assert.strictEqual(res.status, 200);
@@ -474,6 +496,9 @@ async function main() {
     const activeEffective = (await request('/api/effective-collection')).body;
     assert.strictEqual(activeEffective.BEL['14'].real, 0);
     assert.strictEqual(activeEffective.BEL['14'].effective, 1);
+    const realBelgiumMissing = Object.values(realCollection.BEL).filter(value => value <= 0).length;
+    const pendingBelgiumMissing = Object.keys(realCollection.BEL).filter(card => activeEffective.BEL[card].effective <= 0).length;
+    assert.strictEqual(pendingBelgiumMissing, realBelgiumMissing - 1);
     assert.strictEqual(activeEffective.ARG['5'].real, 1);
     assert.strictEqual(activeEffective.ARG['5'].effective, 0);
     assert.ok(activeEffective.ARG['5'].effective >= 0);
