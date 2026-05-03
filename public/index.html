@@ -202,7 +202,10 @@
             Format : <code>MEX5</code> <code>FRA10</code> <code>BEL20</code> <code>FWC3</code> <code>00</code><br>
             Ou collez directement un fichier texte exporte depuis l'app.
           </p>
-          <div class="textarea-label"><span class="label-received">Cartes recues</span></div>
+          <div class="textarea-label">
+            <span class="label-received">Cartes recues</span>
+            <span class="input-counter" id="import-input-counter">0 carte</span>
+          </div>
           <textarea class="card-input" id="import-input" rows="8" placeholder="MEX5&#10;FRA10, BEL3&#10;FWC7&#10;..."></textarea>
           <div id="import-result"></div>
         </div>
@@ -213,11 +216,11 @@
           </p>
           <div class="trade-cols">
             <div>
-              <div class="textarea-label label-received">Recues</div>
+              <div class="textarea-label"><span class="label-received">Recues</span><span class="input-counter" id="trade-received-counter">0 carte</span></div>
               <textarea class="card-input" id="trade-received" placeholder="MEX5&#10;FRA10&#10;BEL3&#10;..."></textarea>
             </div>
             <div>
-              <div class="textarea-label label-given">Donnees</div>
+              <div class="textarea-label"><span class="label-given">Donnees</span><span class="input-counter" id="trade-given-counter">0 carte</span></div>
               <textarea class="card-input" id="trade-given" placeholder="GER7&#10;ARG2&#10;..."></textarea>
             </div>
           </div>
@@ -235,11 +238,11 @@
           </p>
           <div class="trade-cols">
             <div>
-              <div class="textarea-label label-received">Doublons de l'ami</div>
+              <div class="textarea-label"><span class="label-received">Doublons de l'ami</span><span class="input-counter" id="compare-friend-doubles-counter">0 carte</span></div>
               <textarea class="card-input" id="compare-friend-doubles" placeholder="MEX5, FRA10&#10;FWC3; BEL7&#10;..."></textarea>
             </div>
             <div>
-              <div class="textarea-label label-given">Manquantes de l'ami</div>
+              <div class="textarea-label"><span class="label-given">Manquantes de l'ami</span><span class="input-counter" id="compare-friend-missing-counter">0 carte</span></div>
               <textarea class="card-input" id="compare-friend-missing" placeholder="GER7 ARG2&#10;00, FWC8&#10;..."></textarea>
             </div>
           </div>

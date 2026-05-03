@@ -248,6 +248,39 @@ async function main() {
     assert.strictEqual(Math.hypot(11, 0) > tapThreshold, true);
   });
 
+  await test('live card counters are wired for modal fields and result lists', async () => {
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const html = fs.readFileSync(path.join(repoRoot, 'public/index.html'), 'utf8');
+    const css = fs.readFileSync(path.join(repoRoot, 'public/css/style.css'), 'utf8');
+    assert.ok(appJs.includes('function parseCardListWithStats'));
+    assert.ok(appJs.includes("normalizeCardCode(code)"));
+    assert.ok(appJs.includes("replace(/^FCW/, 'FWC')"));
+    assert.ok(appJs.includes('invalidTotal'));
+    assert.ok(appJs.includes('function updateAllInputCounters'));
+    for (const id of ['import-input-counter', 'trade-received-counter', 'trade-given-counter', 'compare-friend-doubles-counter', 'compare-friend-missing-counter']) {
+      assert.ok(html.includes(`id="${id}"`), `${id} should exist`);
+    }
+    assert.ok(appJs.includes('input.addEventListener'));
+    assert.ok(appJs.includes('updateAllInputCounters();'));
+    assert.ok(appJs.includes('cardCountText(r.count'));
+    assert.ok(appJs.includes("label: 'À donner maintenant'"));
+    assert.ok(appJs.includes('count: compare.youCanGive.length'));
+    assert.ok(appJs.includes('count: compare.youCanPotentiallyGive.length'));
+    assert.ok(appJs.includes('pending-summary'));
+    assert.ok(appJs.includes('receivedTotal'));
+    assert.ok(appJs.includes('givenTotal'));
+    assert.ok(css.includes('.input-counter'));
+    assert.ok(css.includes('.pending-count'));
+    assert.ok(css.includes('.pending-summary'));
+
+    const counterPattern = /\b(?:00|[a-z]{2,4}\s*0*\d{1,3})\b/gi;
+    const normalize = value => String(value).trim().toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC');
+    assert.deepStrictEqual('BEL14 FRA3 FWC3'.match(counterPattern).map(normalize), ['BEL14', 'FRA3', 'FWC3']);
+    assert.deepStrictEqual('BEL14, FRA3\nFWC3'.match(counterPattern).map(normalize), ['BEL14', 'FRA3', 'FWC3']);
+    assert.deepStrictEqual('FCW3'.match(counterPattern).map(normalize), ['FWC3']);
+    assert.deepStrictEqual('BEL14 XXX999 FRA3'.match(counterPattern).map(normalize), ['BEL14', 'XXX999', 'FRA3']);
+  });
+
   await test('card parsing and import normalization', async () => {
     const res = await post('/api/import', { cards: 'bel14, FCW3\nFRA12 MEX1 MEX99' });
     assert.strictEqual(res.status, 200);

@@ -635,6 +635,18 @@ a { text-decoration: none; color: inherit; }
   overflow-wrap: anywhere;
 }
 
+.pending-summary {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text-muted);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 14px;
+  font-size: 12px;
+  padding: 10px 12px;
+}
+
 .pending-trade-cols {
   display: grid;
   gap: 12px;
@@ -646,6 +658,12 @@ a { text-decoration: none; color: inherit; }
   font-size: 12px;
   font-weight: 700;
   margin-bottom: 6px;
+}
+
+.pending-count {
+  color: var(--text-muted);
+  font-weight: 600;
+  margin-left: 4px;
 }
 
 .pending-label.received { color: #56d364; }
@@ -1868,9 +1886,18 @@ a { text-decoration: none; color: inherit; }
   display: flex;
   align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  justify-content: space-between;
 }
 .label-received { color: #56d364; }
 .label-given    { color: #f85149; }
+
+.input-counter {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
 
 textarea.card-input {
   width: 100%;

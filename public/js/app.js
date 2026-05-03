@@ -853,9 +853,20 @@ function renderPendingTrades() {
     return;
   }
 
-  list.innerHTML = pendingTrades.slice().reverse().map(trade => {
+  const pendingOnly = pendingTrades.filter(trade => trade.status === 'pending');
+  const receivedTotal = pendingOnly.reduce((sum, trade) => sum + (trade.received || []).length, 0);
+  const givenTotal = pendingOnly.reduce((sum, trade) => sum + (trade.given || []).length, 0);
+  const summary = `<div class="pending-summary">
+    <span>Échanges pending : ${pendingOnly.length}</span>
+    <span>À recevoir : ${cardCountText(receivedTotal)}</span>
+    <span>À donner : ${cardCountText(givenTotal)}</span>
+  </div>`;
+
+  list.innerHTML = summary + pendingTrades.slice().reverse().map(trade => {
     const pending = trade.status === 'pending';
     const availabilityStatus = pendingTradeAvailabilityStatus(trade);
+    const receivedCount = (trade.received || []).length;
+    const givenCount = (trade.given || []).length;
     return `<article class="pending-trade-card status-${trade.status} availability-${availabilityStatus}">
       <div class="pending-trade-header">
         <div>
@@ -869,11 +880,11 @@ function renderPendingTrades() {
       </div>
       <div class="pending-trade-cols">
         <div>
-          <div class="pending-label received">À recevoir</div>
+          <div class="pending-label received">À recevoir <span class="pending-count">${cardCountText(receivedCount)}</span></div>
           <div class="pending-codes">${(trade.received || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
         </div>
         <div>
-          <div class="pending-label given">À donner</div>
+          <div class="pending-label given">À donner <span class="pending-count">${cardCountText(givenCount)}</span></div>
           <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
         </div>
       </div>
@@ -1741,6 +1752,7 @@ async function init() {
   updateGlobalProgress();
   renderHistory();
   renderPendingTrades();
+  setupInputCounters();
 }
 
 init();
@@ -1766,6 +1778,7 @@ function closeModal() {
   document.getElementById('trade-note').value = '';
   document.getElementById('compare-friend-doubles').value = '';
   document.getElementById('compare-friend-missing').value = '';
+  updateAllInputCounters();
 
   lastCompareTrade = { received: [], given: [], givenPotential: [] };
   pendingTradeKey = null;
@@ -1791,12 +1804,17 @@ function switchTab(tab) {
   document.getElementById('btn-compare').style.display = tab === 'compare' ? '' : 'none';
   document.getElementById('import-result').innerHTML = '';
   document.getElementById('trade-result').innerHTML  = '';
+  updateAllInputCounters();
 }
 
 // Parse raw text into array of card codes
 // Accepte les listes separees par espaces, retours ligne, virgules, etc.
 // Ignore aussi les entetes d'export et les compteurs du type "x1".
 function parseInput(text) {
+  return parseCardListWithStats(text).inputCards;
+}
+
+function parseCardListWithStats(text) {
   const teamCodes = [...TEAMS.map(t => t.code), 'FWC', 'FCW']
     .sort((a, b) => b.length - a.length)
     .join('|');
@@ -1805,11 +1823,61 @@ function parseInput(text) {
     .replace(/\([^)]*\)/g, ' ')        // ignore les anciennes notes entre parentheses
     .replace(/\bx\s*\d+\b/gi, ' '); // ignore les compteurs: x1, x2...
 
-  const re = new RegExp(`\\b(?:00|(?:${teamCodes})\\s*0*\\d{1,2})\\b`, 'gi');
-
-  return [...cleaned.matchAll(re)]
-    .map(m => m[0].toUpperCase().replace(/[\s_-]+/g, '').replace(/^FCW/, 'FWC'))
+  const validLikeRe = new RegExp(`\\b(?:00|(?:${teamCodes})\\s*0*\\d{1,2})\\b`, 'gi');
+  const candidateRe = /\b(?:00|[a-z]{2,4}\s*0*\d{1,3})\b/gi;
+  const candidates = [...cleaned.matchAll(candidateRe)].map(match => match[0]);
+  const validMatches = [...cleaned.matchAll(validLikeRe)].map(match => match[0]);
+  const validSet = new Set(validMatches.map(code => normalizeCardCode(code)));
+  const invalids = candidates
+    .map(code => normalizeCardCode(code))
+    .filter(code => !validSet.has(code) || !parseCardCode(code));
+  const inputCards = validMatches
+    .map(m => normalizeCardCode(m))
     .filter(Boolean);
+  const cards = inputCards.filter(code => parseCardCode(code));
+  const duplicates = cards.filter((code, index) => cards.indexOf(code) !== index);
+
+  return { cards, inputCards, invalids, total: cards.length, invalidTotal: invalids.length, duplicates };
+}
+
+function cardCountText(count, noun = 'carte') {
+  return `${count} ${noun}${count > 1 ? 's' : ''}`;
+}
+
+function inputStatsText(stats) {
+  const parts = [cardCountText(stats.total)];
+  if (stats.invalidTotal) parts.push(`${stats.invalidTotal} invalide${stats.invalidTotal > 1 ? 's' : ''}`);
+  return parts.join(' · ');
+}
+
+function updateInputCounter(inputId, counterId) {
+  const input = document.getElementById(inputId);
+  const counter = document.getElementById(counterId);
+  if (!input || !counter) return;
+  counter.textContent = inputStatsText(parseCardListWithStats(input.value));
+}
+
+function updateAllInputCounters() {
+  updateInputCounter('import-input', 'import-input-counter');
+  updateInputCounter('trade-received', 'trade-received-counter');
+  updateInputCounter('trade-given', 'trade-given-counter');
+  updateInputCounter('compare-friend-doubles', 'compare-friend-doubles-counter');
+  updateInputCounter('compare-friend-missing', 'compare-friend-missing-counter');
+}
+
+function setupInputCounters() {
+  [
+    ['import-input', 'import-input-counter'],
+    ['trade-received', 'trade-received-counter'],
+    ['trade-given', 'trade-given-counter'],
+    ['compare-friend-doubles', 'compare-friend-doubles-counter'],
+    ['compare-friend-missing', 'compare-friend-missing-counter']
+  ].forEach(([inputId, counterId]) => {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.addEventListener('input', () => updateInputCounter(inputId, counterId));
+  });
+  updateAllInputCounters();
 }
 
 // Render result box
@@ -1818,7 +1886,7 @@ function renderResult(containerId, rows) {
   if (!rows.length) { box.innerHTML = ''; return; }
   box.innerHTML = `<div class="result-box">${
     rows.map(r => `<div class="result-row">
-      <span class="result-key">${r.label}</span>
+      <span class="result-key">${r.count !== undefined ? `${r.label} — ${cardCountText(r.count, r.countNoun || 'carte')}` : r.label}</span>
       <span class="result-val ${r.cls}">${r.value || '—'}</span>
     </div>`).join('')
   }</div>`;
@@ -1833,32 +1901,38 @@ function renderCompareResult(compare) {
     {
       label: 'À recevoir utile',
       value: codesValue(compare.friendCanGive),
-      cls: 'ok'
+      cls: 'ok',
+      count: compare.friendCanGive.length
     },
     {
       label: 'Encore utiles',
       value: codesValue(compare.friendCanGiveStillNeeded),
-      cls: 'ok'
+      cls: 'ok',
+      count: compare.friendCanGiveStillNeeded.length
     },
     {
       label: 'À donner maintenant',
       value: codesValue(compare.youCanGive),
-      cls: 'ok'
+      cls: 'ok',
+      count: compare.youCanGive.length
     },
     {
       label: 'À donner plus tard',
       value: codesValue(compare.youCanPotentiallyGive),
-      cls: 'warn'
+      cls: 'warn',
+      count: compare.youCanPotentiallyGive.length
     },
     {
       label: 'Échange proposé - je reçois',
       value: codesValue(compare.proposedTrade.received),
-      cls: 'ok'
+      cls: 'ok',
+      count: compare.proposedTrade.received.length
     },
     {
       label: 'Échange proposé - je donne',
       value: codesValue(compare.proposedTrade.given),
-      cls: 'warn'
+      cls: 'warn',
+      count: compare.proposedTrade.given.length
     }
   ];
 
@@ -1866,35 +1940,42 @@ function renderCompareResult(compare) {
     rows.push({
       label: 'Codes invalides dans ses doublons',
       value: compare.invalid.friendDoubles.join(', '),
-      cls: 'error'
+      cls: 'error',
+      count: compare.invalid.friendDoubles.length,
+      countNoun: 'code'
     });
   }
   if (compare.invalid.friendMissing.length) {
     rows.push({
       label: 'Codes invalides dans ses manquantes',
       value: compare.invalid.friendMissing.join(', '),
-      cls: 'error'
+      cls: 'error',
+      count: compare.invalid.friendMissing.length,
+      countNoun: 'code'
     });
   }
   if (compare.pending && compare.pending.potentiallyReceived.length) {
     rows.push({
       label: 'Déjà prévus',
       value: compare.pending.potentiallyReceived.join(', '),
-      cls: 'warn'
+      cls: 'warn',
+      count: compare.pending.potentiallyReceived.length
     });
   }
   if (compare.pending && compare.pending.reservedToGive.length) {
     rows.push({
       label: 'Réservées dans un échange virtuel',
       value: compare.pending.reservedToGive.join(', '),
-      cls: 'warn'
+      cls: 'warn',
+      count: compare.pending.reservedToGive.length
     });
   }
   if (compare.pending && compare.pending.potentiallyAvailable.length) {
     rows.push({
       label: 'Disponibles si annulé',
       value: compare.pending.potentiallyAvailable.join(', '),
-      cls: 'warn'
+      cls: 'warn',
+      count: compare.pending.potentiallyAvailable.length
     });
   }
   if (compare.proposedTrade.givenPotential && compare.proposedTrade.givenPotential.length) {
@@ -1963,6 +2044,7 @@ async function doCompare() {
 function fillTradeFromCompare() {
   document.getElementById('trade-received').value = lastCompareTrade.received.join('\n');
   document.getElementById('trade-given').value = lastCompareTrade.given.join('\n');
+  updateAllInputCounters();
   pendingTradeKey = null;
   document.getElementById('btn-trade').textContent = "Confirmer l'échange";
   switchTab('trade');
@@ -1995,8 +2077,8 @@ async function doImport() {
     await refreshHistory();
 
     renderResult('import-result', [
-      { label: '✅ Importées',   value: res.ok.length      ? res.ok.join(', ')      : null, cls: 'ok'   },
-      { label: '❓ Inconnues',   value: res.unknown.length  ? res.unknown.join(', ') : null, cls: 'warn' },
+      { label: '✅ Importées',   value: res.ok.length      ? res.ok.join(', ')      : null, cls: 'ok', count: res.ok.length },
+      { label: '❓ Inconnues',   value: res.unknown.length  ? res.unknown.join(', ') : null, cls: 'warn', count: res.unknown.length },
     ]);
 
     showToast(`✅ ${res.ok.length} carte(s) importée(s)`);
@@ -2016,16 +2098,16 @@ function formatCountDelta(before, after) {
 function buildTradePreviewRows(preview) {
   const impact = preview.impact;
   const rows = [
-    { label: 'Nouvelles reçues', value: String(impact.newReceived), cls: 'ok' },
-    { label: 'Reçues déjà possédées', value: String(impact.receivedAsDoubles), cls: 'warn' },
-    { label: 'Doublons donnés', value: String(impact.duplicateGiven), cls: 'ok' }
+    { label: 'Nouvelles reçues', value: String(impact.newReceived), cls: 'ok', count: impact.newReceived },
+    { label: 'Reçues déjà possédées', value: String(impact.receivedAsDoubles), cls: 'warn', count: impact.receivedAsDoubles },
+    { label: 'Doublons donnés', value: String(impact.duplicateGiven), cls: 'ok', count: impact.duplicateGiven }
   ];
 
   if (impact.uniqueGiven > 0) {
-    rows.push({ label: 'Cartes uniques données', value: String(impact.uniqueGiven), cls: 'error' });
+    rows.push({ label: 'Cartes uniques données', value: String(impact.uniqueGiven), cls: 'error', count: impact.uniqueGiven });
   }
   if (impact.uniqueBlocked > 0) {
-    rows.push({ label: 'Cartes uniques bloquées', value: String(impact.uniqueBlocked), cls: 'warn' });
+    rows.push({ label: 'Cartes uniques bloquées', value: String(impact.uniqueBlocked), cls: 'warn', count: impact.uniqueBlocked });
   }
 
   rows.push(
@@ -2047,16 +2129,16 @@ function buildTradePreviewRows(preview) {
   );
 
   if (preview.received.unknown.length) {
-    rows.push({ label: 'Reçues inconnues', value: preview.received.unknown.join(', '), cls: 'warn' });
+    rows.push({ label: 'Reçues inconnues', value: preview.received.unknown.join(', '), cls: 'warn', count: preview.received.unknown.length });
   }
   if (preview.given.unknown.length) {
-    rows.push({ label: 'Données inconnues', value: preview.given.unknown.join(', '), cls: 'warn' });
+    rows.push({ label: 'Données inconnues', value: preview.given.unknown.join(', '), cls: 'warn', count: preview.given.unknown.length });
   }
   if (preview.given.refused.length) {
-    rows.push({ label: 'Non possédées', value: preview.given.refused.join(', '), cls: 'error' });
+    rows.push({ label: 'Non possédées', value: preview.given.refused.join(', '), cls: 'error', count: preview.given.refused.length });
   }
   if (preview.given.uniqueBlocked.length) {
-    rows.push({ label: 'Uniques protégées', value: preview.given.uniqueBlocked.join(', '), cls: 'warn' });
+    rows.push({ label: 'Uniques protégées', value: preview.given.uniqueBlocked.join(', '), cls: 'warn', count: preview.given.uniqueBlocked.length });
   }
 
   rows.push({
@@ -2134,7 +2216,8 @@ async function doTrade() {
       rows.push({
         label: '✅ Reçues OK',
         value: res.received.ok.join(', '),
-        cls: 'ok'
+        cls: 'ok',
+        count: res.received.ok.length
       });
     }
 
@@ -2142,7 +2225,8 @@ async function doTrade() {
       rows.push({
         label: '❓ Reçues inconnues',
         value: res.received.unknown.join(', '),
-        cls: 'warn'
+        cls: 'warn',
+        count: res.received.unknown.length
       });
     }
 
@@ -2150,7 +2234,8 @@ async function doTrade() {
       rows.push({
         label: '🔴 Données OK',
         value: res.given.ok.join(', '),
-        cls: 'ok'
+        cls: 'ok',
+        count: res.given.ok.length
       });
     }
 
@@ -2158,7 +2243,8 @@ async function doTrade() {
       rows.push({
         label: '⛔ Non possédées',
         value: res.given.refused.join(', '),
-        cls: 'error'
+        cls: 'error',
+        count: res.given.refused.length
       });
     }
 
@@ -2166,7 +2252,8 @@ async function doTrade() {
       rows.push({
         label: '⚠️ Uniques protégées',
         value: res.given.uniqueBlocked.join(', '),
-        cls: 'warn'
+        cls: 'warn',
+        count: res.given.uniqueBlocked.length
       });
     }
 
@@ -2174,7 +2261,8 @@ async function doTrade() {
       rows.push({
         label: '❓ Données inconnues',
         value: res.given.unknown.join(', '),
-        cls: 'warn'
+        cls: 'warn',
+        count: res.given.unknown.length
       });
     }
 
@@ -2216,10 +2304,10 @@ async function doPendingTrade() {
     if (res.error) {
       const results = res.results || { received: { unknown: [] }, given: { unknown: [], refused: [], uniqueBlocked: [] } };
       renderResult('trade-result', [
-        { label: 'Reçues inconnues', value: codesValue(results.received.unknown), cls: 'warn' },
-        { label: 'Données inconnues', value: codesValue(results.given.unknown), cls: 'warn' },
-        { label: 'Non disponibles', value: codesValue(results.given.refused), cls: 'error' },
-        { label: 'Uniques protégées', value: codesValue(results.given.uniqueBlocked), cls: 'warn' }
+        { label: 'Reçues inconnues', value: codesValue(results.received.unknown), cls: 'warn', count: results.received.unknown.length },
+        { label: 'Données inconnues', value: codesValue(results.given.unknown), cls: 'warn', count: results.given.unknown.length },
+        { label: 'Non disponibles', value: codesValue(results.given.refused), cls: 'error', count: results.given.refused.length },
+        { label: 'Uniques protégées', value: codesValue(results.given.uniqueBlocked), cls: 'warn', count: results.given.uniqueBlocked.length }
       ]);
       showToast('⚠️ Échange virtuel impossible');
       return;
