@@ -1317,6 +1317,56 @@ a { text-decoration: none; color: inherit; }
   gap: 8px;
 }
 
+.album-card-layout {
+  display: grid;
+  gap: 10px;
+  justify-items: center;
+  width: 100%;
+}
+
+.album-card-row {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(var(--album-row-count), minmax(54px, 76px));
+  justify-content: center;
+  width: 100%;
+}
+
+.album-row-2 { --album-row-count: 2; }
+.album-row-3 { --album-row-count: 3; }
+.album-row-4 { --album-row-count: 4; }
+.album-row-team { --album-row-count: 4; }
+
+.album-card-row .sticker-card {
+  width: 100%;
+}
+
+.album-team-card {
+  aspect-ratio: 4/3;
+  min-width: 118px;
+  grid-column: span 2;
+}
+
+.fwc-card-layout {
+  display: grid;
+  gap: 18px;
+}
+
+.fwc-card-section-title {
+  color: var(--text-muted);
+  font-size: 12px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  margin: 0 0 8px;
+  text-transform: uppercase;
+}
+
+.fwc-card-grid-inner {
+  display: grid;
+  gap: 8px;
+  grid-template-columns: repeat(auto-fill, minmax(64px, 1fr));
+}
+
 .sticker-card {
   position: relative;
   aspect-ratio: 3/4;
@@ -1648,6 +1698,20 @@ a { text-decoration: none; color: inherit; }
     gap: 6px;
   }
 
+  .album-card-row {
+    gap: 6px;
+    grid-template-columns: repeat(var(--album-row-count), minmax(42px, 1fr));
+  }
+
+  .album-team-card {
+    min-width: 0;
+  }
+
+  .fwc-card-grid-inner {
+    grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
+    gap: 6px;
+  }
+
   .card-num { font-size: 13px; }
 
   .team-page-header { gap: 12px; margin-bottom: 16px; }
@@ -1657,6 +1721,20 @@ a { text-decoration: none; color: inherit; }
 
 @media (max-width: 400px) {
   .cards-grid {
+    grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
+    gap: 5px;
+  }
+
+  .album-card-layout {
+    gap: 7px;
+  }
+
+  .album-card-row {
+    gap: 5px;
+    grid-template-columns: repeat(var(--album-row-count), minmax(34px, 1fr));
+  }
+
+  .fwc-card-grid-inner {
     grid-template-columns: repeat(auto-fill, minmax(46px, 1fr));
     gap: 5px;
   }

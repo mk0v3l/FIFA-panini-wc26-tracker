@@ -168,6 +168,35 @@ async function main() {
     }
   });
 
+  await test('country card album layout and FWC split are defined', async () => {
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const css = fs.readFileSync(path.join(repoRoot, 'public/css/style.css'), 'utf8');
+    assert.ok(appJs.includes('function getCountryAlbumRows'));
+    assert.ok(appJs.includes('cardKeys.slice(0, 2)'));
+    assert.ok(appJs.includes('cardKeys.slice(2, 6)'));
+    assert.ok(appJs.includes('cardKeys.slice(6, 10)'));
+    assert.ok(appJs.includes('cardKeys.slice(10, 13)'));
+    assert.ok(appJs.includes('cardKeys.slice(13, 17)'));
+    assert.ok(appJs.includes('cardKeys.slice(17, 20)'));
+    const expectedRows = [['1', '2'], ['3', '4', '5', '6'], ['7', '8', '9', '10'], ['11', '12', '13'], ['14', '15', '16', '17'], ['18', '19', '20']];
+    assert.deepStrictEqual(expectedRows.map(row => row.length), [2, 4, 4, 3, 4, 3]);
+    assert.deepStrictEqual([...new Set(expectedRows.flat())], Array.from({ length: 20 }, (_, i) => String(i + 1)));
+
+    assert.ok(appJs.includes("cardKey === '13' ? ' album-team-card'"));
+    assert.ok(css.includes('.album-team-card'));
+    assert.ok(css.includes('aspect-ratio: 4/3'));
+    assert.ok(appJs.includes("teamCode !== 'FWC' && cardKey === '13'"));
+
+    assert.ok(appJs.includes('function getFwcSplitGroups'));
+    assert.ok(appJs.includes("key === '00' || Number(key) <= 8"));
+    assert.ok(appJs.includes("key !== '00' && Number(key) >= 9"));
+    assert.ok(appJs.includes('FWC Special 00-8'));
+    assert.ok(appJs.includes('FWC Special 9-19'));
+    assert.ok(!appJs.includes("'0', ...Array.from"));
+    assert.ok(appJs.includes("String(i + 1)"));
+    assert.ok(appJs.includes('length: 19'));
+  });
+
   await test('card parsing and import normalization', async () => {
     const res = await post('/api/import', { cards: 'bel14, FCW3\nFRA12 MEX1 MEX99' });
     assert.strictEqual(res.status, 200);

@@ -227,6 +227,29 @@ function getTeamMeta(code) {
   return TEAMS.find(team => team.code === code) || null;
 }
 
+function getCountryAlbumRows(cardKeys = Array.from({ length: 20 }, (_, i) => String(i + 1))) {
+  return [
+    cardKeys.slice(0, 2),
+    cardKeys.slice(2, 6),
+    cardKeys.slice(6, 10),
+    cardKeys.slice(10, 13),
+    cardKeys.slice(13, 17),
+    cardKeys.slice(17, 20)
+  ];
+}
+
+function getFwcCardKeys() {
+  return collection.FWC && Object.prototype.hasOwnProperty.call(collection.FWC, '00')
+    ? ['00', ...Array.from({ length: 19 }, (_, i) => String(i + 1))]
+    : Array.from({ length: 19 }, (_, i) => String(i + 1));
+}
+
+function getFwcSplitGroups(cardKeys = getFwcCardKeys()) {
+  const first = cardKeys.filter(key => key === '00' || Number(key) <= 8);
+  const second = cardKeys.filter(key => key !== '00' && Number(key) >= 9);
+  return { first, second };
+}
+
 function normalizeCardCode(raw) {
   return String(raw || '')
     .trim()
@@ -416,10 +439,26 @@ function renderNav() {
   nearlyItem.onclick = navigateToNearlyComplete;
   nav.appendChild(nearlyItem);
 
+  let visibleCount = 0;
+
+  const fwcTeam = {
+    code: 'FWC',
+    name: 'FWC Special',
+    group: 'FWC',
+    color: '#1f6feb'
+  };
+
+  if (teamMatchesSearch(fwcTeam, query)) {
+    const fwcHeaderTop = document.createElement('div');
+    fwcHeaderTop.className = 'group-header nav-item-special';
+    fwcHeaderTop.textContent = 'Spécial 00-8';
+    nav.appendChild(fwcHeaderTop);
+    nav.appendChild(makeNavItem({ ...fwcTeam, name: 'FWC Special 00-8' }));
+    visibleCount++;
+  }
+
   // Teams filtrées par groupe
   const groups = [...new Set(TEAMS.map(t => t.group))];
-
-  let visibleCount = 0;
 
   for (const group of groups) {
     const teamsInGroup = TEAMS
@@ -439,21 +478,13 @@ function renderNav() {
     }
   }
 
-  // FWC Special
-  const fwcTeam = {
-    code: 'FWC',
-    name: 'FWC Special',
-    group: 'FWC',
-    color: '#1f6feb'
-  };
-
   if (teamMatchesSearch(fwcTeam, query)) {
     const fwcHeader = document.createElement('div');
     fwcHeader.className = 'group-header nav-item-special';
     fwcHeader.style.paddingTop = '12px';
-    fwcHeader.textContent = 'Spécial';
+    fwcHeader.textContent = 'Spécial 9-19';
     nav.appendChild(fwcHeader);
-    nav.appendChild(makeNavItem(fwcTeam));
+    nav.appendChild(makeNavItem({ ...fwcTeam, name: 'FWC Special 9-19' }));
     visibleCount++;
   }
 
@@ -641,7 +672,11 @@ function renderOverview() {
   renderDashboard();
   renderQuickCardSearch();
 
-  const allTeams = [...TEAMS, { code: 'FWC', name: 'FWC Special', group: '★', color: '#1f6feb' }];
+  const allTeams = [
+    { code: 'FWC', name: 'FWC Special 00-8', group: '★', color: '#1f6feb' },
+    ...TEAMS,
+    { code: 'FWC', name: 'FWC Special 9-19', group: '★', color: '#1f6feb' }
+  ];
 
   for (const team of allTeams) {
     const p = teamProgress(team.code);
@@ -964,24 +999,26 @@ function renderNearlyCompletePage() {
 }
 
 function updateOverviewCard(code) {
-  const card = document.querySelector(`.overview-card[data-code="${code}"]`);
-  if (!card) return;
+  const overviewCards = document.querySelectorAll(`.overview-card[data-code="${code}"]`);
+  if (!overviewCards.length) return;
   const team = code === 'FWC'
     ? { code: 'FWC', color: '#1f6feb' }
     : TEAMS.find(t => t.code === code);
   const p = teamProgress(code);
   const progress = pct(p.owned, p.total);
   const color = team?.color || '#238636';
-  const fill = card.querySelector('.ov-progress-fill');
-  const stats = card.querySelector('.ov-stats');
-  const ownedEl = card.querySelector('.ov-owned');
-  if (fill)    fill.style.width = `${progress}%`;
-  if (fill)    fill.style.background = color;
-  if (ownedEl) ownedEl.textContent = p.owned;
-  if (stats) {
-    const spans = stats.querySelectorAll('span');
-    if (spans[1]) spans[1].textContent = `${progress}%`;
-  }
+  overviewCards.forEach(card => {
+    const fill = card.querySelector('.ov-progress-fill');
+    const stats = card.querySelector('.ov-stats');
+    const ownedEl = card.querySelector('.ov-owned');
+    if (fill)    fill.style.width = `${progress}%`;
+    if (fill)    fill.style.background = color;
+    if (ownedEl) ownedEl.textContent = p.owned;
+    if (stats) {
+      const spans = stats.querySelectorAll('span');
+      if (spans[1]) spans[1].textContent = `${progress}%`;
+    }
+  });
 }
 // ── Navigation pays précédent / suivant ───────────────────────────────────
 function getTeamOrder() {
@@ -1033,7 +1070,7 @@ function renderTeamPage(code) {
 
   // Ordre des cartes : équipes = 1-20 ; FWC special = 00 puis FWC1-FWC19
   const cardKeys = isSpecial
-    ? ['00', ...Array.from({ length: 19 }, (_, i) => String(i + 1))]
+    ? getFwcCardKeys()
     : Array.from({ length: 20 }, (_, i) => String(i + 1));
 
   // Label affiché sur la carte (FWC special : "00" ou "FWC1"…"FWC19")
@@ -1074,12 +1111,35 @@ function renderTeamPage(code) {
 </div>
     </div>
 
-    <div class="cards-grid" id="cards-grid-${code}"></div>`;
+    <div class="${isSpecial ? 'fwc-card-layout' : 'album-card-layout'}" id="cards-grid-${code}"></div>`;
 
   const grid = document.getElementById(`cards-grid-${code}`);
-  for (const key of cardKeys) {
-    const count = cards[key] ?? 0;
-    grid.appendChild(makeCardEl(code, key, count, isSpecial, cardLabel(key), cardPendingCounts(code, key)));
+  if (isSpecial) {
+    const groups = getFwcSplitGroups(cardKeys);
+    [
+      { title: 'FWC 00-8', keys: groups.first },
+      { title: 'FWC 9-19', keys: groups.second }
+    ].forEach(group => {
+      const section = document.createElement('section');
+      section.className = 'fwc-card-section';
+      section.innerHTML = `<h2 class="fwc-card-section-title">${group.title}</h2><div class="cards-grid fwc-card-grid-inner"></div>`;
+      const sectionGrid = section.querySelector('.fwc-card-grid-inner');
+      for (const key of group.keys) {
+        const count = cards[key] ?? 0;
+        sectionGrid.appendChild(makeCardEl(code, key, count, true, cardLabel(key), cardPendingCounts(code, key)));
+      }
+      grid.appendChild(section);
+    });
+  } else {
+    for (const rowKeys of getCountryAlbumRows(cardKeys)) {
+      const row = document.createElement('div');
+      row.className = `album-card-row album-row-${rowKeys.length}${rowKeys.includes('13') ? ' album-row-team' : ''}`;
+      for (const key of rowKeys) {
+        const count = cards[key] ?? 0;
+        row.appendChild(makeCardEl(code, key, count, false, cardLabel(key), cardPendingCounts(code, key)));
+      }
+      grid.appendChild(row);
+    }
   }
 }
 
@@ -1098,9 +1158,10 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, c
   const fwcClass   = isSpecial ? ' fwc-card' : '';
   const pendingCounts = counts || cardPendingCounts(teamCode, cardKey);
   const pendingClasses = `${pendingCounts.incoming > 0 ? ' pending-incoming' : ''}${pendingCounts.outgoing > 0 ? ' pending-outgoing' : ''}${pendingCounts.doublePotential ? ' potential-duplicate' : ''}`;
+  const teamCardClass = teamCode !== 'FWC' && cardKey === '13' ? ' album-team-card' : '';
 
   const el = document.createElement('div');
-  el.className = `sticker-card ${stateClass}${fwcClass}${pendingClasses}`;
+  el.className = `sticker-card ${stateClass}${fwcClass}${pendingClasses}${teamCardClass}`;
   el.dataset.team = teamCode;
   el.dataset.card = cardKey;
   el.dataset.incoming = String(pendingCounts.incoming);
