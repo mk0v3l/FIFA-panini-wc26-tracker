@@ -1152,6 +1152,10 @@ function renderCardInner(teamCode, cardKey, count, displayLabel, counts = cardPe
   return `${doubleBadge}${incomingBadge}${potentialDoubleBadge}${outgoingBadge}<span class="card-num">${displayLabel}</span>${checkEl}`;
 }
 
+function hasMovedBeyondTapThreshold(startX, startY, currentX, currentY, threshold = 10) {
+  return Math.hypot(currentX - startX, currentY - startY) > threshold;
+}
+
 function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, counts = null) {
   const displayLabel = label ?? cardKey;
   const stateClass = count === 0 ? 'state-0' : count === 1 ? 'state-1' : 'state-2';
@@ -1176,31 +1180,76 @@ function makeCardEl(teamCode, cardKey, count, isSpecial = false, label = null, c
   // Touch / click handling
   let pressTimer = null;
   let didLongPress = false;
+  let gestureMoved = false;
+  let pointerStartX = 0;
+  let pointerStartY = 0;
+  let ignoreNextClick = false;
 
-  const startPress = () => {
+  const clearPressTimer = () => {
+    clearTimeout(pressTimer);
+    pressTimer = null;
+  };
+
+  const startPress = (clientX = 0, clientY = 0) => {
     didLongPress = false;
+    gestureMoved = false;
+    pointerStartX = clientX;
+    pointerStartY = clientY;
+    clearPressTimer();
     pressTimer = setTimeout(() => {
+      if (gestureMoved) return;
       didLongPress = true;
       el.classList.add('pressing');
       handleCardAction(teamCode, cardKey, -1, el);
     }, 500);
   };
   const endPress = () => {
-    clearTimeout(pressTimer);
+    clearPressTimer();
     el.classList.remove('pressing');
   };
-  const doTap = () => {
+  const cancelPressForMove = () => {
+    gestureMoved = true;
+    clearPressTimer();
+    el.classList.remove('pressing');
+  };
+  const trackMove = (clientX = 0, clientY = 0) => {
+    if (!gestureMoved && hasMovedBeyondTapThreshold(pointerStartX, pointerStartY, clientX, clientY)) {
+      cancelPressForMove();
+    }
+  };
+  const doTap = (fromTouch = false) => {
+    if (gestureMoved) {
+      if (fromTouch) ignoreNextClick = true;
+      return;
+    }
     if (!didLongPress) handleCardAction(teamCode, cardKey, +1, el);
+    if (fromTouch) ignoreNextClick = true;
   };
 
-  el.addEventListener('touchstart', (e) => { e.preventDefault(); startPress(); }, { passive: false });
-  el.addEventListener('touchend',   (e) => { e.preventDefault(); endPress(); doTap(); });
-  el.addEventListener('touchcancel', endPress);
+  el.addEventListener('touchstart', (e) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    startPress(touch.clientX, touch.clientY);
+  }, { passive: true });
+  el.addEventListener('touchmove', (e) => {
+    const touch = e.touches[0];
+    if (!touch) return;
+    trackMove(touch.clientX, touch.clientY);
+  }, { passive: true });
+  el.addEventListener('touchend', () => { endPress(); doTap(true); }, { passive: true });
+  el.addEventListener('touchcancel', () => { cancelPressForMove(); ignoreNextClick = true; }, { passive: true });
 
-  el.addEventListener('mousedown',  startPress);
+  el.addEventListener('mousedown',  (e) => startPress(e.clientX, e.clientY));
+  el.addEventListener('mousemove',  (e) => trackMove(e.clientX, e.clientY));
   el.addEventListener('mouseup',    endPress);
   el.addEventListener('mouseleave', endPress);
-  el.addEventListener('click',      doTap);
+  el.addEventListener('click',      () => {
+    if (ignoreNextClick) {
+      ignoreNextClick = false;
+      return;
+    }
+    doTap(false);
+  });
 
   el.addEventListener('contextmenu', (e) => {
     e.preventDefault();

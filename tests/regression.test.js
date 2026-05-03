@@ -186,6 +186,12 @@ async function main() {
     assert.ok(css.includes('.album-team-card'));
     assert.ok(css.includes('aspect-ratio: 4/3'));
     assert.ok(appJs.includes("teamCode !== 'FWC' && cardKey === '13'"));
+    assert.ok(css.includes('--album-card-width'));
+    assert.ok(css.includes('grid-template-columns: repeat(var(--album-row-count), var(--album-card-width))'));
+    assert.ok(css.includes('width: var(--album-card-width)'));
+    assert.ok(!css.includes('.album-card-row .sticker-card {\n  width: 100%;'));
+    assert.ok(!css.includes('grid-template-columns: repeat(var(--album-row-count), minmax(42px, 1fr))'));
+    assert.ok(!css.includes('grid-template-columns: repeat(var(--album-row-count), minmax(34px, 1fr))'));
 
     assert.ok(appJs.includes('function getFwcSplitGroups'));
     assert.ok(appJs.includes("key === '00' || Number(key) <= 8"));
@@ -195,6 +201,24 @@ async function main() {
     assert.ok(!appJs.includes("'0', ...Array.from"));
     assert.ok(appJs.includes("String(i + 1)"));
     assert.ok(appJs.includes('length: 19'));
+  });
+
+  await test('card touch handling distinguishes tap long press and scroll', async () => {
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const css = fs.readFileSync(path.join(repoRoot, 'public/css/style.css'), 'utf8');
+    assert.ok(appJs.includes('function hasMovedBeyondTapThreshold'));
+    assert.ok(appJs.includes('Math.hypot'));
+    assert.ok(appJs.includes('gestureMoved'));
+    assert.ok(appJs.includes('cancelPressForMove'));
+    assert.ok(appJs.includes('touchmove'));
+    assert.ok(appJs.includes('ignoreNextClick'));
+    assert.ok(appJs.includes('if (gestureMoved)'));
+    assert.ok(css.includes('touch-action: pan-y'));
+    assert.ok(!appJs.includes('touchstart\', (e) => { e.preventDefault()'));
+    const tapThreshold = 10;
+    assert.strictEqual(Math.hypot(3, 4) > tapThreshold, false);
+    assert.strictEqual(Math.hypot(0, 11) > tapThreshold, true);
+    assert.strictEqual(Math.hypot(11, 0) > tapThreshold, true);
   });
 
   await test('card parsing and import normalization', async () => {

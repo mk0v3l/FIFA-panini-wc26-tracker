@@ -1318,18 +1318,19 @@ a { text-decoration: none; color: inherit; }
 }
 
 .album-card-layout {
+  --album-card-width: 66px;
   display: grid;
   gap: 10px;
-  justify-items: center;
+  justify-items: start;
   width: 100%;
 }
 
 .album-card-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(var(--album-row-count), minmax(54px, 76px));
-  justify-content: center;
-  width: 100%;
+  grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
+  justify-content: start;
+  max-width: 100%;
 }
 
 .album-row-2 { --album-row-count: 2; }
@@ -1338,13 +1339,13 @@ a { text-decoration: none; color: inherit; }
 .album-row-team { --album-row-count: 4; }
 
 .album-card-row .sticker-card {
-  width: 100%;
+  width: var(--album-card-width);
 }
 
 .album-team-card {
   aspect-ratio: 4/3;
-  min-width: 118px;
   grid-column: span 2;
+  width: calc((var(--album-card-width) * 2) + 8px);
 }
 
 .fwc-card-layout {
@@ -1374,7 +1375,7 @@ a { text-decoration: none; color: inherit; }
   cursor: pointer;
   user-select: none;
   -webkit-user-select: none;
-  touch-action: manipulation;
+  touch-action: pan-y;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -1700,11 +1701,11 @@ a { text-decoration: none; color: inherit; }
 
   .album-card-row {
     gap: 6px;
-    grid-template-columns: repeat(var(--album-row-count), minmax(42px, 1fr));
+    grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
   }
 
   .album-team-card {
-    min-width: 0;
+    width: calc((var(--album-card-width) * 2) + 6px);
   }
 
   .fwc-card-grid-inner {
@@ -1726,12 +1727,17 @@ a { text-decoration: none; color: inherit; }
   }
 
   .album-card-layout {
+    --album-card-width: 54px;
     gap: 7px;
   }
 
   .album-card-row {
     gap: 5px;
-    grid-template-columns: repeat(var(--album-row-count), minmax(34px, 1fr));
+    grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
+  }
+
+  .album-team-card {
+    width: calc((var(--album-card-width) * 2) + 5px);
   }
 
   .fwc-card-grid-inner {
