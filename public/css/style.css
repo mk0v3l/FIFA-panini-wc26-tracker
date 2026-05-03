@@ -1328,22 +1328,25 @@ a { text-decoration: none; color: inherit; }
 .album-card-row {
   display: grid;
   gap: 8px;
-  grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
+  grid-template-columns: repeat(4, var(--album-card-width));
   justify-content: start;
   max-width: 100%;
 }
 
-.album-row-2 { --album-row-count: 2; }
-.album-row-3 { --album-row-count: 3; }
-.album-row-4 { --album-row-count: 4; }
-.album-row-team { --album-row-count: 4; }
-
-.album-card-row .sticker-card {
+.album-card-row .sticker-card,
+.album-placeholder {
   width: var(--album-card-width);
 }
 
+.album-placeholder {
+  aspect-ratio: 3/4;
+  pointer-events: none;
+  visibility: hidden;
+}
+
 .album-team-card {
-  aspect-ratio: 4/3;
+  aspect-ratio: auto;
+  height: var(--album-card-width);
   width: calc(var(--album-card-width) * 4 / 3);
 }
 
@@ -1700,7 +1703,7 @@ a { text-decoration: none; color: inherit; }
 
   .album-card-row {
     gap: 6px;
-    grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
+    grid-template-columns: repeat(4, var(--album-card-width));
   }
 
   .fwc-card-grid-inner {
@@ -1728,7 +1731,7 @@ a { text-decoration: none; color: inherit; }
 
   .album-card-row {
     gap: 5px;
-    grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
+    grid-template-columns: repeat(4, var(--album-card-width));
   }
 
   .album-team-card {

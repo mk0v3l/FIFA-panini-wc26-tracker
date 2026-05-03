@@ -241,12 +241,12 @@ function isFwcView(code) {
 
 function getCountryAlbumRows(cardKeys = Array.from({ length: 20 }, (_, i) => String(i + 1))) {
   return [
-    cardKeys.slice(0, 2),
+    [null, null, ...cardKeys.slice(0, 2)],
     cardKeys.slice(2, 6),
     cardKeys.slice(6, 10),
     cardKeys.slice(10, 13),
     cardKeys.slice(13, 17),
-    cardKeys.slice(17, 20)
+    [null, ...cardKeys.slice(17, 20)]
   ];
 }
 
@@ -1164,8 +1164,15 @@ function renderTeamPage(code) {
   } else {
     for (const rowKeys of getCountryAlbumRows(cardKeys)) {
       const row = document.createElement('div');
-      row.className = `album-card-row album-row-${rowKeys.length}${rowKeys.includes('13') ? ' album-row-team' : ''}`;
+      row.className = `album-card-row${rowKeys.includes('13') ? ' album-row-team' : ''}`;
       for (const key of rowKeys) {
+        if (key === null) {
+          const placeholder = document.createElement('div');
+          placeholder.className = 'album-placeholder';
+          placeholder.setAttribute('aria-hidden', 'true');
+          row.appendChild(placeholder);
+          continue;
+        }
         const count = cards[key] ?? 0;
         row.appendChild(makeCardEl(dataCode, key, count, false, cardLabel(key), cardPendingCounts(dataCode, key)));
       }
