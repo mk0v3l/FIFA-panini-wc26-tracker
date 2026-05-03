@@ -1344,8 +1344,7 @@ a { text-decoration: none; color: inherit; }
 
 .album-team-card {
   aspect-ratio: 4/3;
-  grid-column: span 2;
-  width: calc((var(--album-card-width) * 2) + 8px);
+  width: calc(var(--album-card-width) * 4 / 3);
 }
 
 .fwc-card-layout {
@@ -1704,10 +1703,6 @@ a { text-decoration: none; color: inherit; }
     grid-template-columns: repeat(var(--album-row-count), var(--album-card-width));
   }
 
-  .album-team-card {
-    width: calc((var(--album-card-width) * 2) + 6px);
-  }
-
   .fwc-card-grid-inner {
     grid-template-columns: repeat(auto-fill, minmax(54px, 1fr));
     gap: 6px;
@@ -1737,7 +1732,7 @@ a { text-decoration: none; color: inherit; }
   }
 
   .album-team-card {
-    width: calc((var(--album-card-width) * 2) + 5px);
+    width: calc(var(--album-card-width) * 4 / 3);
   }
 
   .fwc-card-grid-inner {

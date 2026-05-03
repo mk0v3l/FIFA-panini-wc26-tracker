@@ -185,7 +185,12 @@ async function main() {
     assert.ok(appJs.includes("cardKey === '13' ? ' album-team-card'"));
     assert.ok(css.includes('.album-team-card'));
     assert.ok(css.includes('aspect-ratio: 4/3'));
+    assert.ok(css.includes('width: calc(var(--album-card-width) * 4 / 3)'));
+    assert.ok(!css.includes('grid-column: span 2'));
+    assert.ok(!css.includes('calc((var(--album-card-width) * 2)'));
     assert.ok(appJs.includes("teamCode !== 'FWC' && cardKey === '13'"));
+    assert.ok(appJs.includes('makeCardEl(code, key, count, true'));
+    assert.ok(appJs.includes("rowKeys.includes('13')"));
     assert.ok(css.includes('--album-card-width'));
     assert.ok(css.includes('grid-template-columns: repeat(var(--album-row-count), var(--album-card-width))'));
     assert.ok(css.includes('width: var(--album-card-width)'));
