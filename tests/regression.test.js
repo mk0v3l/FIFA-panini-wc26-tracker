@@ -306,6 +306,7 @@ async function main() {
     assert.ok(appJs.includes('function editPendingTradeCards'));
     assert.ok(appJs.includes('Modifier reçues'));
     assert.ok(appJs.includes('Modifier données'));
+    assert.ok(appJs.includes("const visibleTrades = pendingTrades.filter(trade => trade.status === 'pending')"));
     assert.ok(appJs.includes('includeInCalculations !== false'));
     assert.ok(appJs.includes('/api/pending-trades/${encodeURIComponent(id)}/include'));
     assert.ok(appJs.includes('/api/pending-trades/${encodeURIComponent(id)}/cards'));
@@ -742,6 +743,64 @@ async function main() {
     writePendingTrades([]);
   });
 
+  await test('pending trade card edits are sorted and cancelled trades stay hidden from active UI', async () => {
+    const appJs = fs.readFileSync(path.join(repoRoot, 'public/js/app.js'), 'utf8');
+    const serverJs = fs.readFileSync(path.join(repoRoot, 'server.js'), 'utf8');
+    assert.ok(serverJs.includes('function compareCardsByAlbumOrder'));
+    assert.ok(serverJs.includes('sortCardsByAlbumOrder(results.received.ok)'));
+    assert.ok(serverJs.includes('sortCardsByAlbumOrder(results.given.ok)'));
+    assert.ok(appJs.includes("visibleTrades.slice().reverse().map(trade =>"));
+
+    writePendingTrades([]);
+    await setCount('MEX', '1', 3);
+    await setCount('MEX', '20', 3);
+    await setCount('FWC', '3', 3);
+    const create = await post('/api/pending-trades', { received: ['MEX1'], given: [] });
+    assert.strictEqual(create.status, 200);
+    const id = create.body.trade.id;
+
+    const editReceived = await patch(`/api/pending-trades/${id}/cards`, {
+      received: 'MEX20 MEX1 FWC3 MEX1',
+      given: []
+    });
+    assert.strictEqual(editReceived.status, 200);
+    assert.deepStrictEqual(editReceived.body.trade.received, ['FWC3', 'MEX1', 'MEX1', 'MEX20']);
+
+    const editGiven = await patch(`/api/pending-trades/${id}/cards`, {
+      received: ['FWC3'],
+      given: 'MEX20 MEX1 FWC3'
+    });
+    assert.strictEqual(editGiven.status, 200);
+    assert.deepStrictEqual(editGiven.body.trade.given, ['FWC3', 'MEX1', 'MEX20']);
+
+    writePendingTrades([
+      {
+        id: 'active-visible',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['MEX1'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      },
+      {
+        id: 'cancelled-hidden',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['MEX20'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    const trades = (await request('/api/pending-trades')).body;
+    assert.ok(trades.some(trade => trade.id === 'cancelled-hidden'));
+
+    writePendingTrades([]);
+  });
+
   await test('editing pending trade cards recalculates dependencies and excludes itself', async () => {
     writePendingTrades([]);
     await setCount('RSA', '14', 2);
@@ -778,6 +837,89 @@ async function main() {
     assert.strictEqual(selfEdit.status, 400);
     assert.match(JSON.stringify(selfEdit.body), /RSA16/);
     assert.strictEqual(snapshotCollection(), beforeSelfEdit);
+
+    writePendingTrades([]);
+  });
+
+  await test('MEX1 pending dependencies recalculate after edit cancel toggle and real receipt', async () => {
+    writePendingTrades([]);
+    await setCount('MEX', '1', 1);
+    await setCount('RSA', '14', 2);
+    const before = snapshotCollection();
+
+    const supplier = await post('/api/pending-trades', { received: ['MEX1'], given: [] });
+    assert.strictEqual(supplier.status, 200);
+    const createdDependent = await post('/api/pending-trades', { received: [], given: ['MEX1'], allowUniqueGiven: false });
+    assert.strictEqual(createdDependent.status, 200);
+    assert.strictEqual(createdDependent.body.trade.availability.status, 'dependent');
+    assert.ok(createdDependent.body.trade.availability.dependentCards.includes('MEX1'));
+
+    writePendingTrades([
+      {
+        id: supplier.body.trade.id,
+        createdAt: supplier.body.trade.createdAt,
+        status: 'pending',
+        received: ['MEX1'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    const editable = await post('/api/pending-trades', { received: [], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(editable.status, 200);
+    const editedDependent = await patch(`/api/pending-trades/${editable.body.trade.id}/cards`, { received: [], given: ['MEX1'] });
+    assert.strictEqual(editedDependent.status, 200);
+    assert.strictEqual(editedDependent.body.trade.availability.status, 'dependent');
+    assert.ok(editedDependent.body.trade.availability.dependentCards.includes('MEX1'));
+    assert.strictEqual((await post(`/api/pending-trades/${editable.body.trade.id}/complete`)).status, 409);
+
+    const disabledSupplier = await patch(`/api/pending-trades/${supplier.body.trade.id}/include`, { includeInCalculations: false });
+    assert.strictEqual(disabledSupplier.status, 200);
+    let editedFromList = (await request('/api/pending-trades')).body.find(trade => trade.id === editable.body.trade.id);
+    assert.strictEqual(editedFromList.availability.status, 'blocked');
+    assert.strictEqual((await post(`/api/pending-trades/${editable.body.trade.id}/complete`)).status, 409);
+
+    const enabledSupplier = await patch(`/api/pending-trades/${supplier.body.trade.id}/include`, { includeInCalculations: true });
+    assert.strictEqual(enabledSupplier.status, 200);
+    editedFromList = (await request('/api/pending-trades')).body.find(trade => trade.id === editable.body.trade.id);
+    assert.strictEqual(editedFromList.availability.status, 'dependent');
+
+    const cancelledSupplier = await post(`/api/pending-trades/${supplier.body.trade.id}/cancel`);
+    assert.strictEqual(cancelledSupplier.status, 200);
+    editedFromList = (await request('/api/pending-trades')).body.find(trade => trade.id === editable.body.trade.id);
+    assert.strictEqual(editedFromList.availability.status, 'blocked');
+    assert.strictEqual(snapshotCollection(), before);
+
+    await patch('/api/card', { team: 'MEX', card: '1', delta: 1, source: 'regression' });
+    const complete = await post(`/api/pending-trades/${editable.body.trade.id}/complete`);
+    assert.strictEqual(complete.status, 200);
+    assert.strictEqual(complete.body.trade.status, 'completed');
+    assert.strictEqual((await collection()).MEX['1'], 1);
+
+    writePendingTrades([]);
+  });
+
+  await test('pending creation and edit refuse unique or over-reserved gives', async () => {
+    writePendingTrades([]);
+    await setCount('MEX', '1', 1);
+    await setCount('RSA', '14', 2);
+
+    const unique = await post('/api/pending-trades', { received: [], given: ['MEX1'], allowUniqueGiven: false });
+    assert.strictEqual(unique.status, 400);
+    assert.match(JSON.stringify(unique.body), /MEX1/);
+
+    const reserved = await post('/api/pending-trades', { received: [], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(reserved.status, 200);
+    const secondReserved = await post('/api/pending-trades', { received: [], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(secondReserved.status, 400);
+    assert.match(JSON.stringify(secondReserved.body), /RSA14/);
+
+    const editable = await post('/api/pending-trades', { received: ['BEL14'], given: [] });
+    assert.strictEqual(editable.status, 200);
+    const editToReserved = await patch(`/api/pending-trades/${editable.body.trade.id}/cards`, { received: ['BEL14'], given: ['RSA14'] });
+    assert.strictEqual(editToReserved.status, 400);
+    assert.match(JSON.stringify(editToReserved.body), /RSA14/);
 
     writePendingTrades([]);
   });

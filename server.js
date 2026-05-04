@@ -483,6 +483,17 @@ function cardKeyFromCode(code) {
   return parsed ? `${parsed.team}:${parsed.card}` : null;
 }
 
+function compareCardsByAlbumOrder(a, b) {
+  const parsedA = parseCardCode(a);
+  const parsedB = parseCardCode(b);
+  if (!parsedA || !parsedB) return String(a).localeCompare(String(b));
+  return cardSortValue(parsedA.team, parsedA.card) - cardSortValue(parsedB.team, parsedB.card);
+}
+
+function sortCardsByAlbumOrder(cards) {
+  return [...cards].sort(compareCardsByAlbumOrder);
+}
+
 function pendingImpact(pendingTrades, excludeTradeId = null) {
   const incoming = new Map();
   const outgoing = new Map();
@@ -689,8 +700,8 @@ function createPendingTrade(results) {
     id: createHistoryId(),
     createdAt: new Date().toISOString(),
     status: 'pending',
-    received: results.received.ok,
-    given: results.given.ok,
+    received: sortCardsByAlbumOrder(results.received.ok),
+    given: sortCardsByAlbumOrder(results.given.ok),
     note: results.note,
     source: 'trade_modal',
     allowUniqueGiven: results.allowUniqueGiven,
@@ -935,8 +946,8 @@ app.patch('/api/pending-trades/:id/cards', (req, res) => {
 
   trades[index] = {
     ...trades[index],
-    received: results.received.ok,
-    given: results.given.ok,
+    received: sortCardsByAlbumOrder(results.received.ok),
+    given: sortCardsByAlbumOrder(results.given.ok),
     updatedAt: new Date().toISOString()
   };
   savePendingTrades(trades);

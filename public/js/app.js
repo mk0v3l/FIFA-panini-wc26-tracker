@@ -917,21 +917,21 @@ function renderPendingTrades() {
   const list = document.getElementById('pending-trades-list');
   if (!list) return;
 
-  if (!pendingTrades.length) {
+  const visibleTrades = pendingTrades.filter(trade => trade.status === 'pending');
+  if (!visibleTrades.length) {
     list.innerHTML = '<div class="pending-empty">Aucun échange virtuel enregistré</div>';
     return;
   }
 
-  const pendingOnly = pendingTrades.filter(trade => trade.status === 'pending');
-  const receivedTotal = pendingOnly.reduce((sum, trade) => sum + (trade.received || []).length, 0);
-  const givenTotal = pendingOnly.reduce((sum, trade) => sum + (trade.given || []).length, 0);
+  const receivedTotal = visibleTrades.reduce((sum, trade) => sum + (trade.received || []).length, 0);
+  const givenTotal = visibleTrades.reduce((sum, trade) => sum + (trade.given || []).length, 0);
   const summary = `<div class="pending-summary">
-    <span>Échanges pending : ${pendingOnly.length}</span>
+    <span>Échanges pending : ${visibleTrades.length}</span>
     <span>À recevoir : ${cardCountText(receivedTotal)}</span>
     <span>À donner : ${cardCountText(givenTotal)}</span>
   </div>`;
 
-  list.innerHTML = summary + pendingTrades.slice().reverse().map(trade => {
+  list.innerHTML = summary + visibleTrades.slice().reverse().map(trade => {
     const pending = trade.status === 'pending';
     const availabilityStatus = pendingTradeAvailabilityStatus(trade);
     const receivedCount = (trade.received || []).length;
