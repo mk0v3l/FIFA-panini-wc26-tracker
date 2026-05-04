@@ -461,6 +461,23 @@ function normalizeTradeCards(data, cards) {
   return { ok, unknown };
 }
 
+function normalizeTradeCardsStrict(data, cards) {
+  const parsedCards = extractCardCodesDetailed(cards);
+  const ok = [];
+  const unknown = [...parsedCards.invalid];
+
+  for (const raw of parsedCards.codes) {
+    const parsed = parseCardCode(raw);
+    if (!parsed || !data[parsed.team] || !(parsed.card in data[parsed.team])) {
+      unknown.push(raw);
+      continue;
+    }
+    ok.push(cardCode(parsed.team, parsed.card));
+  }
+
+  return { ok, unknown };
+}
+
 function cardKeyFromCode(code) {
   const parsed = parseCardCode(code);
   return parsed ? `${parsed.team}:${parsed.card}` : null;
@@ -625,6 +642,32 @@ function validatePendingTrade(data, pendingTrades, body) {
     given: { ok: [], unknown: givenCards.unknown, refused: [], uniqueBlocked: [], reserved: [], dependent: [] },
     note: String(note || '').slice(0, 500),
     allowUniqueGiven: Boolean(allowUniqueGiven),
+    availability
+  };
+
+  for (const card of availability.cards) {
+    if (card.availableNow || card.dependsOnPending) results.given.ok.push(card.code);
+    if (card.dependsOnPending) results.given.dependent.push(card.code);
+    if (card.reservedOutgoingPending > 0) results.given.reserved.push(card.code);
+    if (!card.availablePotentially) {
+      if (card.blockingReason === 'no_duplicate_available') results.given.uniqueBlocked.push(card.code);
+      else results.given.refused.push(card.code);
+    }
+  }
+
+  return results;
+}
+
+function validatePendingTradeCardUpdate(data, pendingTrades, trade, body) {
+  const receivedCards = normalizeTradeCardsStrict(data, body?.received || []);
+  const givenCards = normalizeTradeCardsStrict(data, body?.given || []);
+  const availability = analyzeTradeAvailability(data, pendingTrades, givenCards.ok, {
+    allowUniqueGiven: Boolean(trade.allowUniqueGiven),
+    excludeTradeId: trade.id
+  });
+  const results = {
+    received: { ok: receivedCards.ok, unknown: receivedCards.unknown },
+    given: { ok: [], unknown: givenCards.unknown, refused: [], uniqueBlocked: [], reserved: [], dependent: [] },
     availability
   };
 
@@ -865,6 +908,39 @@ app.patch('/api/pending-trades/:id/include', (req, res) => {
   };
   savePendingTrades(trades);
   res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]) });
+});
+
+app.patch('/api/pending-trades/:id/cards', (req, res) => {
+  const data = loadData();
+  const trades = loadPendingTrades();
+  const index = trades.findIndex(trade => trade.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Pending trade not found' });
+  if (trades[index].status !== 'pending') {
+    return res.status(400).json({ error: 'Only pending trades can be edited' });
+  }
+  if (!req.body || !('received' in req.body) || !('given' in req.body)) {
+    return res.status(400).json({ error: 'received and given are required' });
+  }
+
+  const results = validatePendingTradeCardUpdate(data, trades, trades[index], req.body);
+  if (results.received.unknown.length || results.given.unknown.length) {
+    return res.status(400).json({ error: 'Pending trade contains invalid cards', results });
+  }
+  if (!results.received.ok.length && !results.given.ok.length) {
+    return res.status(400).json({ error: 'Un échange virtuel doit contenir au moins une carte reçue ou donnée.', results });
+  }
+  if (results.given.refused.length || results.given.uniqueBlocked.length) {
+    return res.status(400).json({ error: 'Pending trade contains unavailable given cards', results });
+  }
+
+  trades[index] = {
+    ...trades[index],
+    received: results.received.ok,
+    given: results.given.ok,
+    updatedAt: new Date().toISOString()
+  };
+  savePendingTrades(trades);
+  res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]), results });
 });
 
 app.post('/api/pending-trades/:id/complete', (req, res) => {

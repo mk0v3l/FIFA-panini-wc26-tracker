@@ -302,8 +302,13 @@ async function main() {
     assert.ok(appJs.includes('setupGlobalPendingToggle();'));
     assert.ok(appJs.includes('refreshCollectionViews();'));
     assert.ok(appJs.includes('function renderPendingIncludeControl'));
+    assert.ok(appJs.includes('function renderPendingCardsEditor'));
+    assert.ok(appJs.includes('function editPendingTradeCards'));
+    assert.ok(appJs.includes('Modifier reçues'));
+    assert.ok(appJs.includes('Modifier données'));
     assert.ok(appJs.includes('includeInCalculations !== false'));
     assert.ok(appJs.includes('/api/pending-trades/${encodeURIComponent(id)}/include'));
+    assert.ok(appJs.includes('/api/pending-trades/${encodeURIComponent(id)}/cards'));
     assert.ok(appJs.includes('body: JSON.stringify({ friendDoubles, friendMissing, includePending: includePendingGlobally })'));
   });
 
@@ -670,6 +675,109 @@ async function main() {
     assert.strictEqual(completed.status, 400);
     assert.match(completed.body.error, /pending/i);
     assert.strictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === 'completed-toggle').includeInCalculations, true);
+
+    writePendingTrades([]);
+  });
+
+  await test('pending trade cards can be edited safely with validation', async () => {
+    writePendingTrades([]);
+    await setCount('RSA', '14', 2);
+    await setCount('RSA', '15', 1);
+    await setCount('RSA', '16', 2);
+    await setCount('RSA', '20', 0);
+    const beforeCollection = snapshotCollection();
+
+    const create = await post('/api/pending-trades', { received: ['BEL14'], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(create.status, 200);
+    const id = create.body.trade.id;
+    const beforeHistory = snapshotDataFile('history.json');
+
+    const editReceived = await patch(`/api/pending-trades/${id}/cards`, { received: 'FWC3', given: ['RSA14'] });
+    assert.strictEqual(editReceived.status, 200);
+    assert.deepStrictEqual(editReceived.body.trade.received, ['FWC3']);
+    assert.deepStrictEqual(editReceived.body.trade.given, ['RSA14']);
+    assert.strictEqual(editReceived.body.trade.status, 'pending');
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+
+    const editGiven = await patch(`/api/pending-trades/${id}/cards`, { received: ['FWC3'], given: 'RSA16' });
+    assert.strictEqual(editGiven.status, 200);
+    assert.deepStrictEqual(editGiven.body.trade.given, ['RSA16']);
+    assert.ok(!editGiven.body.trade.given.includes('RSA14'));
+
+    const beforeInvalidPending = snapshotDataFile('pending-trades.json');
+    const invalid = await patch(`/api/pending-trades/${id}/cards`, { received: ['XXX999'], given: ['RSA16'] });
+    assert.strictEqual(invalid.status, 400);
+    assert.match(invalid.headers.get('content-type') || '', /application\/json/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforeInvalidPending);
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+
+    const empty = await patch(`/api/pending-trades/${id}/cards`, { received: [], given: [] });
+    assert.strictEqual(empty.status, 400);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforeInvalidPending);
+
+    const impossible = await patch(`/api/pending-trades/${id}/cards`, { received: ['FWC3'], given: ['RSA20'] });
+    assert.strictEqual(impossible.status, 400);
+    assert.match(JSON.stringify(impossible.body), /RSA20/);
+    assert.strictEqual(snapshotDataFile('pending-trades.json'), beforeInvalidPending);
+
+    const completedBefore = snapshotDataFile('pending-trades.json');
+    writePendingTrades([
+      {
+        id: 'completed-card-edit',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    const completedEdit = await patch('/api/pending-trades/completed-card-edit/cards', { received: ['FWC3'], given: [] });
+    assert.strictEqual(completedEdit.status, 400);
+    assert.deepStrictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === 'completed-card-edit').received, ['BEL14']);
+    assert.notStrictEqual(snapshotDataFile('pending-trades.json'), completedBefore);
+
+    writePendingTrades([]);
+  });
+
+  await test('editing pending trade cards recalculates dependencies and excludes itself', async () => {
+    writePendingTrades([]);
+    await setCount('RSA', '14', 2);
+    await setCount('RSA', '15', 1);
+    await setCount('RSA', '16', 2);
+    const before = snapshotCollection();
+
+    const parent = await post('/api/pending-trades', { received: ['RSA15'], given: [] });
+    assert.strictEqual(parent.status, 200);
+    const child = await post('/api/pending-trades', { received: [], given: ['RSA14'], allowUniqueGiven: false });
+    assert.strictEqual(child.status, 200);
+
+    const dependentEdit = await patch(`/api/pending-trades/${child.body.trade.id}/cards`, { received: [], given: ['RSA15'] });
+    assert.strictEqual(dependentEdit.status, 200);
+    assert.strictEqual(dependentEdit.body.trade.availability.status, 'dependent');
+    assert.ok(dependentEdit.body.trade.availability.dependentCards.includes('RSA15'));
+    assert.strictEqual((await post(`/api/pending-trades/${child.body.trade.id}/complete`)).status, 409);
+
+    const parentWithoutRsa15 = await patch(`/api/pending-trades/${parent.body.trade.id}/cards`, { received: ['FWC3'], given: [] });
+    assert.strictEqual(parentWithoutRsa15.status, 200);
+    const childAfterParentChange = (await request('/api/pending-trades')).body.find(trade => trade.id === child.body.trade.id);
+    assert.strictEqual(childAfterParentChange.availability.status, 'blocked');
+
+    const parentWithRsa15Again = await patch(`/api/pending-trades/${parent.body.trade.id}/cards`, { received: ['RSA15'], given: [] });
+    assert.strictEqual(parentWithRsa15Again.status, 200);
+    const childAfterRestore = (await request('/api/pending-trades')).body.find(trade => trade.id === child.body.trade.id);
+    assert.strictEqual(childAfterRestore.availability.status, 'dependent');
+
+    await setCount('RSA', '16', 1);
+    const beforeSelfEdit = snapshotCollection();
+    const selfTrade = await post('/api/pending-trades', { received: ['RSA16'], given: [] });
+    assert.strictEqual(selfTrade.status, 200);
+    const selfEdit = await patch(`/api/pending-trades/${selfTrade.body.trade.id}/cards`, { received: ['RSA16'], given: ['RSA16'] });
+    assert.strictEqual(selfEdit.status, 400);
+    assert.match(JSON.stringify(selfEdit.body), /RSA16/);
+    assert.strictEqual(snapshotCollection(), beforeSelfEdit);
 
     writePendingTrades([]);
   });

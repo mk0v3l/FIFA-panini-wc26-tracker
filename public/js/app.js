@@ -149,6 +149,14 @@ async function patchPendingTradeInclude(id, includeInCalculations) {
   });
 }
 
+async function patchPendingTradeCards(id, received, given) {
+  return api(`/api/pending-trades/${encodeURIComponent(id)}/cards`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ received, given }),
+  });
+}
+
 function loadIncludePendingPreference() {
   try {
     return localStorage.getItem(INCLUDE_PENDING_STORAGE_KEY) === 'true';
@@ -870,6 +878,41 @@ function renderPendingIncludeControl(trade) {
   </label>`;
 }
 
+function renderPendingCardsBlock(trade, field) {
+  const pending = trade.status === 'pending';
+  const cards = trade[field] || [];
+  const label = field === 'received' ? 'À recevoir' : 'À donner';
+  const editLabel = field === 'received' ? 'Modifier reçues' : 'Modifier données';
+  const labelClass = field === 'received' ? 'received' : 'given';
+  return `<div class="pending-cards-block" id="pending-cards-${field}-${trade.id}">
+    <div class="pending-label ${labelClass}">
+      ${label} <span class="pending-count">${cardCountText(cards.length)}</span>
+    </div>
+    <div class="pending-codes">${cards.map(code => `<span>${escapeHtml(code)}</span>`).join('') || '<em>Aucune</em>'}</div>
+    ${pending ? `<button type="button" class="pending-card-edit-btn" onclick="editPendingTradeCards('${trade.id}', '${field}')">${editLabel}</button>` : ''}
+  </div>`;
+}
+
+function renderPendingCardsEditor(trade, field) {
+  const cards = trade[field] || [];
+  const title = field === 'received' ? 'Cartes reçues' : 'Cartes données';
+  const counterId = `pending-cards-counter-${field}-${trade.id}`;
+  return `<div class="pending-cards-editor">
+    <div class="pending-cards-editor-title">${title}</div>
+    <textarea
+      class="pending-cards-input"
+      id="pending-cards-input-${field}-${trade.id}"
+      oninput="updatePendingCardsCounter('${trade.id}', '${field}')"
+    >${escapeHtml(cards.join(' '))}</textarea>
+    <div class="input-counter" id="${counterId}">${cardCountText(cards.length)}</div>
+    <div class="pending-cards-error" id="pending-cards-error-${field}-${trade.id}"></div>
+    <div class="pending-note-actions">
+      <button type="button" class="pending-action note-save" onclick="savePendingTradeCards('${trade.id}', '${field}')">Enregistrer</button>
+      <button type="button" class="pending-action note-cancel" onclick="cancelPendingTradeCardsEdit('${trade.id}', '${field}')">Annuler</button>
+    </div>
+  </div>`;
+}
+
 function renderPendingTrades() {
   const list = document.getElementById('pending-trades-list');
   if (!list) return;
@@ -906,14 +949,8 @@ function renderPendingTrades() {
       </div>
       ${renderPendingIncludeControl(trade)}
       <div class="pending-trade-cols">
-        <div>
-          <div class="pending-label received">À recevoir <span class="pending-count">${cardCountText(receivedCount)}</span></div>
-          <div class="pending-codes">${(trade.received || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
-        </div>
-        <div>
-          <div class="pending-label given">À donner <span class="pending-count">${cardCountText(givenCount)}</span></div>
-          <div class="pending-codes">${(trade.given || []).map(code => `<span>${code}</span>`).join('') || '<em>Aucune</em>'}</div>
-        </div>
+        ${renderPendingCardsBlock(trade, 'received')}
+        ${renderPendingCardsBlock(trade, 'given')}
       </div>
       ${renderPendingAvailability(trade)}
       <div class="pending-note-block" id="pending-note-${trade.id}">
@@ -959,12 +996,39 @@ function updatePendingTradeNoteBlock(id, editing = false) {
   block.innerHTML = renderPendingTradeNote(trade, editing);
 }
 
+function updatePendingTradeCardsBlock(id, field, editing = false) {
+  const trade = pendingTradeById(id);
+  const block = document.getElementById(`pending-cards-${field}-${id}`);
+  if (!trade || !block) return;
+  block.outerHTML = editing
+    ? renderPendingCardsEditor(trade, field)
+    : renderPendingCardsBlock(trade, field);
+  if (editing) updatePendingCardsCounter(id, field);
+}
+
 function editPendingTradeNote(id) {
   updatePendingTradeNoteBlock(id, true);
 }
 
 function cancelPendingTradeNoteEdit(id) {
   updatePendingTradeNoteBlock(id, false);
+}
+
+function editPendingTradeCards(id, field) {
+  updatePendingTradeCardsBlock(id, field, true);
+}
+
+function cancelPendingTradeCardsEdit(id, field) {
+  updatePendingTradeCardsBlock(id, field, false);
+}
+
+function updatePendingCardsCounter(id, field) {
+  const input = document.getElementById(`pending-cards-input-${field}-${id}`);
+  const counter = document.getElementById(`pending-cards-counter-${field}-${id}`);
+  if (!input || !counter) return;
+  const stats = parseCardListWithStats(input.value);
+  const suffix = stats.invalidTotal ? ` · ${stats.invalidTotal} invalide${stats.invalidTotal > 1 ? 's' : ''}` : '';
+  counter.textContent = `${cardCountText(stats.count)}${suffix}`;
 }
 
 async function savePendingTradeNote(id) {
@@ -989,6 +1053,39 @@ async function savePendingTradeNote(id) {
   } catch (err) {
     console.error(err);
     showToast('⚠️ Note impossible à enregistrer');
+  }
+}
+
+function pendingCardsPayloadForEdit(trade, field, value) {
+  return {
+    received: field === 'received' ? value : [...(trade.received || [])],
+    given: field === 'given' ? value : [...(trade.given || [])]
+  };
+}
+
+async function savePendingTradeCards(id, field) {
+  const trade = pendingTradeById(id);
+  const input = document.getElementById(`pending-cards-input-${field}-${id}`);
+  const errorEl = document.getElementById(`pending-cards-error-${field}-${id}`);
+  if (!trade || !input) return;
+
+  try {
+    const payload = pendingCardsPayloadForEdit(trade, field, input.value);
+    const res = await patchPendingTradeCards(id, payload.received, payload.given);
+    if (res.error) {
+      if (errorEl) errorEl.textContent = res.error;
+      showToast(res.error);
+      return;
+    }
+
+    await refreshPendingTrades();
+    refreshCollectionViews();
+    renderQuickCardSearch();
+    showToast(field === 'received' ? 'Cartes reçues mises à jour' : 'Cartes données mises à jour');
+  } catch (err) {
+    console.error(err);
+    if (errorEl) errorEl.textContent = 'Modification impossible';
+    showToast('⚠️ Modification impossible');
   }
 }
 

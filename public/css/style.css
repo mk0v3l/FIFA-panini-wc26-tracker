@@ -701,6 +701,53 @@ a { text-decoration: none; color: inherit; }
   margin-left: 4px;
 }
 
+.pending-cards-block {
+  min-width: 0;
+}
+
+.pending-card-edit-btn {
+  background: var(--surface2);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+  margin-top: 8px;
+  padding: 7px 9px;
+}
+
+.pending-cards-editor {
+  min-width: 0;
+}
+
+.pending-cards-editor-title {
+  color: var(--text);
+  font-size: 12px;
+  font-weight: 700;
+  margin-bottom: 6px;
+}
+
+.pending-cards-input {
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  color: var(--text);
+  font: inherit;
+  min-height: 86px;
+  padding: 9px 10px;
+  resize: vertical;
+  width: 100%;
+}
+
+.pending-cards-error {
+  color: #f85149;
+  font-size: 12px;
+  line-height: 1.35;
+  margin-top: 6px;
+  overflow-wrap: anywhere;
+}
+
 .pending-label.received { color: #56d364; }
 .pending-label.given { color: #f85149; }
 
