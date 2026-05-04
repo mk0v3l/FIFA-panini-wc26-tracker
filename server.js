@@ -153,6 +153,10 @@ function savePendingTrades(trades) {
   saveJsonAtomic(PENDING_TRADES_FILE, trades);
 }
 
+function pendingTradeCountsInCalculations(trade) {
+  return trade && trade.status === 'pending' && trade.includeInCalculations !== false;
+}
+
 function createHistoryId() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 10)}`;
 }
@@ -472,7 +476,7 @@ function pendingImpact(pendingTrades, excludeTradeId = null) {
   };
 
   for (const trade of pendingTrades) {
-    if (trade.status !== 'pending') continue;
+    if (!pendingTradeCountsInCalculations(trade)) continue;
     if (excludeTradeId && trade.id === excludeTradeId) continue;
     for (const code of trade.received || []) add(incoming, code);
     for (const code of trade.given || []) add(outgoing, code);
@@ -608,7 +612,7 @@ function enrichPendingTrade(data, pendingTrades, trade) {
     allowUniqueGiven: Boolean(trade.allowUniqueGiven),
     excludeTradeId: trade.id
   });
-  return { ...trade, availability };
+  return { includeInCalculations: true, ...trade, availability };
 }
 
 function validatePendingTrade(data, pendingTrades, body) {
@@ -646,7 +650,8 @@ function createPendingTrade(results) {
     given: results.given.ok,
     note: results.note,
     source: 'trade_modal',
-    allowUniqueGiven: results.allowUniqueGiven
+    allowUniqueGiven: results.allowUniqueGiven,
+    includeInCalculations: true
   };
 }
 
@@ -838,6 +843,26 @@ app.patch('/api/pending-trades/:id/note', (req, res) => {
 
   const note = rawNote.trim();
   trades[index] = { ...trades[index], note };
+  savePendingTrades(trades);
+  res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]) });
+});
+
+app.patch('/api/pending-trades/:id/include', (req, res) => {
+  const data = loadData();
+  const trades = loadPendingTrades();
+  const index = trades.findIndex(trade => trade.id === req.params.id);
+  if (index === -1) return res.status(404).json({ error: 'Pending trade not found' });
+  if (trades[index].status !== 'pending') {
+    return res.status(400).json({ error: 'Only pending trades can be toggled' });
+  }
+  if (!req.body || typeof req.body.includeInCalculations !== 'boolean') {
+    return res.status(400).json({ error: 'includeInCalculations must be a boolean' });
+  }
+
+  trades[index] = {
+    ...trades[index],
+    includeInCalculations: req.body.includeInCalculations
+  };
   savePendingTrades(trades);
   res.json({ ok: true, trade: enrichPendingTrade(data, trades, trades[index]) });
 });
@@ -1183,7 +1208,8 @@ function buildExportText(data, type, format, pendingTrades = []) {
 // ─── Import ──────────────────────────────────────────────────────────────────
 app.post('/api/compare', (req, res) => {
   const data = loadData();
-  const results = compareWithFriend(data, req.body, loadPendingTrades());
+  const includePending = !req.body || req.body.includePending !== false;
+  const results = compareWithFriend(data, req.body, includePending ? loadPendingTrades() : []);
   if (results.error) return res.status(400).json({ error: results.error });
   res.json(results);
 });

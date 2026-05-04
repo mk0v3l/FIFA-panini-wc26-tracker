@@ -301,6 +301,10 @@ async function main() {
     assert.ok(appJs.includes("if (includePendingGlobally) params.set('includePending', '1')"));
     assert.ok(appJs.includes('setupGlobalPendingToggle();'));
     assert.ok(appJs.includes('refreshCollectionViews();'));
+    assert.ok(appJs.includes('function renderPendingIncludeControl'));
+    assert.ok(appJs.includes('includeInCalculations !== false'));
+    assert.ok(appJs.includes('/api/pending-trades/${encodeURIComponent(id)}/include'));
+    assert.ok(appJs.includes('body: JSON.stringify({ friendDoubles, friendMissing, includePending: includePendingGlobally })'));
   });
 
   await test('card parsing and import normalization', async () => {
@@ -530,6 +534,142 @@ async function main() {
     ]);
     const completedStats = statsFromEffectiveObject((await request('/api/effective-collection')).body);
     assert.deepStrictEqual(completedStats, realStats);
+
+    writePendingTrades([]);
+  });
+
+  await test('individual pending trade include toggle controls potential calculations', async () => {
+    await setCount('BEL', '14', 0);
+    await setCount('FRA', '3', 2);
+
+    writePendingTrades([
+      {
+        id: 'legacy-included',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression'
+      }
+    ]);
+    let effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].effective, 1);
+    assert.ok(!/\bBEL14\b/.test((await request('/api/export/missing?format=compact&includePending=1')).text));
+
+    writePendingTrades([
+      {
+        id: 'disabled-incoming',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: ['FRA3'],
+        note: '',
+        source: 'regression',
+        includeInCalculations: false
+      }
+    ]);
+    effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].effective, 0);
+    assert.strictEqual(effective.FRA['3'].effective, 2);
+    assert.match((await request('/api/export/missing?format=compact&includePending=1')).text, /\bBEL14\b/);
+    assert.match((await request('/api/export/doubles?format=compact&includePending=1')).text, /\bFRA3 x1\b/);
+
+    writePendingTrades([
+      {
+        id: 'enabled-incoming',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['BEL14'],
+        given: ['FRA3'],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].effective, 1);
+    assert.strictEqual(effective.FRA['3'].effective, 1);
+    assert.ok(!/\bBEL14\b/.test((await request('/api/export/missing?format=compact&includePending=1')).text));
+    assert.ok(!/\bFRA3 x1\b/.test((await request('/api/export/doubles?format=compact&includePending=1')).text));
+
+    const globalOffExport = await request('/api/export/missing?format=compact');
+    assert.match(globalOffExport.text, /\bBEL14\b/);
+    const trades = (await request('/api/pending-trades')).body;
+    assert.strictEqual(trades.find(trade => trade.id === 'enabled-incoming').includeInCalculations, true);
+
+    writePendingTrades([
+      {
+        id: 'cancelled-enabled',
+        createdAt: new Date().toISOString(),
+        status: 'cancelled',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      },
+      {
+        id: 'completed-enabled',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['BEL14'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    effective = (await request('/api/effective-collection')).body;
+    assert.strictEqual(effective.BEL['14'].effective, 0);
+
+    writePendingTrades([]);
+  });
+
+  await test('pending trade include API is safe and refuses non-pending trades', async () => {
+    writePendingTrades([]);
+    const create = await post('/api/pending-trades', { received: ['MEX2'], given: [], note: '' });
+    assert.strictEqual(create.status, 200);
+    const id = create.body.trade.id;
+    assert.strictEqual(create.body.trade.includeInCalculations, true);
+    const beforeCollection = snapshotCollection();
+    const beforeHistory = snapshotDataFile('history.json');
+
+    const disable = await patch(`/api/pending-trades/${id}/include`, { includeInCalculations: false });
+    assert.strictEqual(disable.status, 200);
+    assert.strictEqual(disable.body.trade.includeInCalculations, false);
+    assert.strictEqual(snapshotCollection(), beforeCollection);
+    assert.strictEqual(snapshotDataFile('history.json'), beforeHistory);
+    assert.strictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === id).includeInCalculations, false);
+
+    const enable = await patch(`/api/pending-trades/${id}/include`, { includeInCalculations: true });
+    assert.strictEqual(enable.status, 200);
+    assert.strictEqual(enable.body.trade.includeInCalculations, true);
+
+    const invalidBody = await patch(`/api/pending-trades/${id}/include`, { includeInCalculations: 'false' });
+    assert.strictEqual(invalidBody.status, 400);
+    assert.match(invalidBody.headers.get('content-type') || '', /application\/json/);
+
+    const missing = await patch('/api/pending-trades/missing-id/include', { includeInCalculations: false });
+    assert.strictEqual(missing.status, 404);
+    assert.match(missing.headers.get('content-type') || '', /application\/json/);
+
+    writePendingTrades([
+      {
+        id: 'completed-toggle',
+        createdAt: new Date().toISOString(),
+        status: 'completed',
+        received: ['MEX2'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: true
+      }
+    ]);
+    const completed = await patch('/api/pending-trades/completed-toggle/include', { includeInCalculations: false });
+    assert.strictEqual(completed.status, 400);
+    assert.match(completed.body.error, /pending/i);
+    assert.strictEqual((await request('/api/pending-trades')).body.find(trade => trade.id === 'completed-toggle').includeInCalculations, true);
 
     writePendingTrades([]);
   });
@@ -828,6 +968,39 @@ async function main() {
     assert.strictEqual(complete.status, 200);
     assert.strictEqual(complete.body.trade.status, 'completed');
     assert.ok((await collection()).RSA['15'] >= 1);
+
+    writePendingTrades([]);
+  });
+
+  await test('disabled pending trade does not provide dependency stock', async () => {
+    await setCount('RSA', '15', 1);
+    const before = snapshotCollection();
+    writePendingTrades([
+      {
+        id: 'disabled-parent-rsa15',
+        createdAt: new Date().toISOString(),
+        status: 'pending',
+        received: ['RSA15'],
+        given: [],
+        note: '',
+        source: 'regression',
+        includeInCalculations: false
+      }
+    ]);
+
+    const blocked = await post('/api/pending-trades', { received: [], given: ['RSA15'], allowUniqueGiven: false });
+    assert.strictEqual(blocked.status, 400);
+    assert.match(JSON.stringify(blocked.body), /RSA15/);
+    assert.strictEqual(snapshotCollection(), before);
+
+    const enableParent = await patch('/api/pending-trades/disabled-parent-rsa15/include', { includeInCalculations: true });
+    assert.strictEqual(enableParent.status, 200);
+    assert.strictEqual(enableParent.body.trade.includeInCalculations, true);
+    const dependent = await post('/api/pending-trades', { received: [], given: ['RSA15'], allowUniqueGiven: false });
+    assert.strictEqual(dependent.status, 200);
+    assert.strictEqual(dependent.body.trade.availability.status, 'dependent');
+    assert.ok(dependent.body.trade.availability.dependentCards.includes('RSA15'));
+    assert.strictEqual(snapshotCollection(), before);
 
     writePendingTrades([]);
   });

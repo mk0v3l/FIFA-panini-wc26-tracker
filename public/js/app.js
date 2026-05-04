@@ -141,6 +141,14 @@ async function fetchPendingTrades() {
   return api('/api/pending-trades');
 }
 
+async function patchPendingTradeInclude(id, includeInCalculations) {
+  return api(`/api/pending-trades/${encodeURIComponent(id)}/include`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ includeInCalculations }),
+  });
+}
+
 function loadIncludePendingPreference() {
   try {
     return localStorage.getItem(INCLUDE_PENDING_STORAGE_KEY) === 'true';
@@ -190,7 +198,7 @@ function globalProgress(options = {}) {
 }
 
 function activePendingTradeCount() {
-  return pendingTrades.filter(trade => trade.status === 'pending').length;
+  return pendingTrades.filter(trade => trade.status === 'pending' && trade.includeInCalculations !== false).length;
 }
 
 function dashboardStats() {
@@ -320,7 +328,7 @@ function pendingImpactForCard(teamCode, cardKey) {
   let incoming = 0;
   let outgoing = 0;
   for (const trade of pendingTrades) {
-    if (trade.status !== 'pending') continue;
+    if (trade.status !== 'pending' || trade.includeInCalculations === false) continue;
     incoming += (trade.received || []).filter(card => card === code).length;
     outgoing += (trade.given || []).filter(card => card === code).length;
   }
@@ -594,6 +602,7 @@ function setupGlobalPendingToggle() {
     includePendingGlobally = input.checked;
     saveIncludePendingPreference(includePendingGlobally);
     refreshCollectionViews();
+    renderPendingTrades();
   });
 }
 
@@ -842,6 +851,25 @@ function renderPendingAvailability(trade) {
   return `<div class="pending-availability ${availability.status}">${label}${detailHtml}</div>`;
 }
 
+function renderPendingIncludeControl(trade) {
+  if (trade.status !== 'pending') return '';
+  const checked = trade.includeInCalculations !== false;
+  const disabled = !includePendingGlobally;
+  const note = disabled
+    ? '<span class="pending-include-note">Option globale désactivée</span>'
+    : '';
+  return `<label class="pending-include-control${disabled ? ' disabled' : ''}">
+    <input
+      type="checkbox"
+      ${checked ? 'checked' : ''}
+      ${disabled ? 'disabled' : ''}
+      onchange="togglePendingTradeInclude('${trade.id}', this.checked)"
+    >
+    <span>Pris en compte</span>
+    ${note}
+  </label>`;
+}
+
 function renderPendingTrades() {
   const list = document.getElementById('pending-trades-list');
   if (!list) return;
@@ -876,6 +904,7 @@ function renderPendingTrades() {
           ${pending ? `<span class="pending-status availability">${availabilityStatus === 'ready' ? 'prêt' : availabilityStatus === 'dependent' ? 'dépendant' : 'bloqué'}</span>` : ''}
         </div>
       </div>
+      ${renderPendingIncludeControl(trade)}
       <div class="pending-trade-cols">
         <div>
           <div class="pending-label received">À recevoir <span class="pending-count">${cardCountText(receivedCount)}</span></div>
@@ -960,6 +989,28 @@ async function savePendingTradeNote(id) {
   } catch (err) {
     console.error(err);
     showToast('⚠️ Note impossible à enregistrer');
+  }
+}
+
+async function togglePendingTradeInclude(id, includeInCalculations) {
+  try {
+    const res = await patchPendingTradeInclude(id, includeInCalculations);
+    if (res.error) {
+      showToast(res.error);
+      await refreshPendingTrades();
+      return;
+    }
+
+    const index = pendingTrades.findIndex(trade => trade.id === id);
+    if (index !== -1) pendingTrades[index] = res.trade;
+    await refreshPendingTrades();
+    refreshCollectionViews();
+    renderQuickCardSearch();
+    showToast(includeInCalculations ? 'Échange virtuel pris en compte' : 'Échange virtuel ignoré temporairement');
+  } catch (err) {
+    console.error(err);
+    showToast('⚠️ Option impossible à modifier');
+    await refreshPendingTrades();
   }
 }
 
@@ -2002,7 +2053,7 @@ async function doCompare() {
     const res = await api('/api/compare', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ friendDoubles, friendMissing }),
+      body: JSON.stringify({ friendDoubles, friendMissing, includePending: includePendingGlobally }),
     });
 
     if (res.error) {

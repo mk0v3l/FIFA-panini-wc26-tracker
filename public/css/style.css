@@ -596,6 +596,31 @@ a { text-decoration: none; color: inherit; }
   color: var(--text);
 }
 
+.pending-include-control {
+  align-items: center;
+  color: var(--text);
+  display: flex;
+  flex-wrap: wrap;
+  font-size: 12px;
+  gap: 7px;
+  margin-top: 10px;
+  max-width: 100%;
+}
+
+.pending-include-control input {
+  flex-shrink: 0;
+}
+
+.pending-include-control.disabled {
+  color: var(--text-muted);
+}
+
+.pending-include-note {
+  color: var(--text-muted);
+  font-size: 11px;
+  overflow-wrap: anywhere;
+}
+
 .availability-dependent .pending-status.availability {
   background: #3d2200;
   border-color: #9e6a03;
